@@ -1,0 +1,247 @@
+{
+  "research_date": "2026-10-07",
+  "baseline": {
+    "repository": "heetbeet/ssh-magic",
+    "version": "0.1.6",
+    "commit": "6c8e1517a236296103f22c9c11fd6f0e3c2db0ac",
+    "url": "https://github.com/heetbeet/ssh-magic/tree/6c8e1517a236296103f22c9c11fd6f0e3c2db0ac"
+  },
+  "upstreams": [
+    {
+      "repository": "magic-wormhole/magic-wormhole",
+      "ref": "master",
+      "commit": "cc6160670bf7faaab52ba307e3f8ba95e80529fe",
+      "url": "https://github.com/magic-wormhole/magic-wormhole/tree/cc6160670bf7faaab52ba307e3f8ba95e80529fe"
+    },
+    {
+      "repository": "magic-wormhole/magic-wormhole-protocols",
+      "ref": "main",
+      "commit": "566ee9e9a20f251256cf8b343ec3bbcb599efecd",
+      "url": "https://github.com/magic-wormhole/magic-wormhole-protocols/tree/566ee9e9a20f251256cf8b343ec3bbcb599efecd"
+    },
+    {
+      "repository": "warner/python-spake2",
+      "ref": "master",
+      "commit": "a13d32d2b6cc5945eca182c4f89b6b4bafb2d78a",
+      "url": "https://github.com/warner/python-spake2/tree/a13d32d2b6cc5945eca182c4f89b6b4bafb2d78a"
+    },
+    {
+      "repository": "tlsfuzzer/tlslite-ng",
+      "ref": "master",
+      "commit": "7e95ea1a86c0d42d8d931ff14134d31f01ce1d76",
+      "url": "https://github.com/tlsfuzzer/tlslite-ng/tree/7e95ea1a86c0d42d8d931ff14134d31f01ce1d76"
+    },
+    {
+      "repository": "ronf/asyncssh",
+      "ref": "develop",
+      "commit": "b5f0c93a6fdb4bf86e491bde35284d82346c1a67",
+      "url": "https://github.com/ronf/asyncssh/tree/b5f0c93a6fdb4bf86e491bde35284d82346c1a67"
+    },
+    {
+      "repository": "paramiko/paramiko",
+      "ref": "main",
+      "commit": "142f593e40ad767c5e3556cbace66dc84589620c",
+      "url": "https://github.com/paramiko/paramiko/tree/142f593e40ad767c5e3556cbace66dc84589620c"
+    },
+    {
+      "repository": "rustonbsd/iroh-ssh",
+      "ref": "0.2.12",
+      "commit": "c799cfd1f9ef7ba2b199c46f311206415b681f38",
+      "url": "https://github.com/rustonbsd/iroh-ssh/tree/c799cfd1f9ef7ba2b199c46f311206415b681f38"
+    },
+    {
+      "repository": "openssh/openssh-portable",
+      "ref": "master",
+      "commit": "d549f99da344c178c5f632a62a6aa60544d7236e",
+      "url": "https://github.com/openssh/openssh-portable/tree/d549f99da344c178c5f632a62a6aa60544d7236e"
+    },
+    {
+      "repository": "warner/python-pure25519",
+      "ref": "master",
+      "commit": "c88a6aeee0653c46c429f096ec3090388f77525a",
+      "url": "https://github.com/warner/python-pure25519/tree/c88a6aeee0653c46c429f096ec3090388f77525a"
+    },
+    {
+      "repository": "jedisct1/libsodium",
+      "ref": "master",
+      "commit": "75c6d5520a3b99790696d98b554673697c71c5cc",
+      "url": "https://github.com/jedisct1/libsodium/tree/75c6d5520a3b99790696d98b554673697c71c5cc"
+    },
+    {
+      "repository": "magic-wormhole/magic-wormhole-transit-relay",
+      "ref": "master",
+      "commit": "6d50be62c118df74d8f0a042662fbc407dfd5849",
+      "url": "https://github.com/magic-wormhole/magic-wormhole-transit-relay/tree/6d50be62c118df74d8f0a042662fbc407dfd5849"
+    },
+    {
+      "repository": "python-hyper/wsproto",
+      "ref": "main",
+      "commit": "5e0685d0740ec30716897442f336de1118f5f40a",
+      "url": "https://github.com/python-hyper/wsproto/tree/5e0685d0740ec30716897442f336de1118f5f40a"
+    },
+    {
+      "repository": "python-hyper/h11",
+      "ref": "master",
+      "commit": "62c5068c971579d61fa1b55373390e12f25fd856",
+      "url": "https://github.com/python-hyper/h11/tree/62c5068c971579d61fa1b55373390e12f25fd856"
+    }
+  ],
+  "references": [
+    {
+      "title": "RFC 4251",
+      "purpose": "SSH architecture/encodings",
+      "url": "https://www.rfc-editor.org/rfc/rfc4251.html"
+    },
+    {
+      "title": "RFC 4252",
+      "purpose": "SSH authentication",
+      "url": "https://www.rfc-editor.org/rfc/rfc4252.html"
+    },
+    {
+      "title": "RFC 4253",
+      "purpose": "SSH transport/key derivation",
+      "url": "https://www.rfc-editor.org/rfc/rfc4253.html"
+    },
+    {
+      "title": "RFC 4254",
+      "purpose": "SSH channels",
+      "url": "https://www.rfc-editor.org/rfc/rfc4254.html"
+    },
+    {
+      "title": "RFC 5656",
+      "purpose": "ECDH exchange-hash/message structure referenced by RFC 8731",
+      "url": "https://www.rfc-editor.org/rfc/rfc5656.html"
+    },
+    {
+      "title": "RFC 6668",
+      "purpose": "SSH HMAC-SHA2 negotiation names",
+      "url": "https://www.rfc-editor.org/rfc/rfc6668.html"
+    },
+    {
+      "title": "RFC 5869",
+      "purpose": "HKDF",
+      "url": "https://www.rfc-editor.org/rfc/rfc5869.html"
+    },
+    {
+      "title": "RFC 6455",
+      "purpose": "WebSockets",
+      "url": "https://www.rfc-editor.org/rfc/rfc6455.html"
+    },
+    {
+      "title": "RFC 7748",
+      "purpose": "X25519",
+      "url": "https://www.rfc-editor.org/rfc/rfc7748.html"
+    },
+    {
+      "title": "RFC 8032",
+      "purpose": "Ed25519",
+      "url": "https://www.rfc-editor.org/rfc/rfc8032.html"
+    },
+    {
+      "title": "RFC 8308",
+      "purpose": "SSH extension negotiation",
+      "url": "https://www.rfc-editor.org/rfc/rfc8308.html"
+    },
+    {
+      "title": "RFC 8439",
+      "purpose": "ChaCha/Poly1305 reference, not the OpenSSH AEAD layout",
+      "url": "https://www.rfc-editor.org/rfc/rfc8439.html"
+    },
+    {
+      "title": "RFC 8709",
+      "purpose": "Ed25519 SSH key/signature encoding",
+      "url": "https://www.rfc-editor.org/rfc/rfc8709.html"
+    },
+    {
+      "title": "RFC 8731",
+      "purpose": "SSH X25519",
+      "url": "https://www.rfc-editor.org/rfc/rfc8731.html"
+    },
+    {
+      "title": "RFC 9142",
+      "purpose": "SSH KEX recommendations",
+      "url": "https://www.rfc-editor.org/rfc/rfc9142.html"
+    },
+    {
+      "title": "SFTP v3 draft 02",
+      "purpose": "Deployed SFTP v3 profile, expired draft",
+      "url": "https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02"
+    },
+    {
+      "title": "Strict KEX draft 01",
+      "purpose": "OpenSSH hardening, expired draft",
+      "url": "https://datatracker.ietf.org/doc/html/draft-miller-sshm-strict-kex-01"
+    },
+    {
+      "title": "OpenSSH cipher draft 00",
+      "purpose": "OpenSSH ChaCha20-Poly1305 construction, expired draft",
+      "url": "https://datatracker.ietf.org/doc/html/draft-josefsson-ssh-chacha20-poly1305-openssh-00"
+    },
+    {
+      "title": "Python ssl",
+      "purpose": "Permitted TLS/hostname/trust implementation",
+      "url": "https://docs.python.org/3/library/ssl.html"
+    },
+    {
+      "title": "Python hashlib",
+      "purpose": "Permitted hashing and optional scrypt",
+      "url": "https://docs.python.org/3/library/hashlib.html"
+    },
+    {
+      "title": "Python subprocess",
+      "purpose": "Payload execution and process limits",
+      "url": "https://docs.python.org/3/library/subprocess.html"
+    },
+    {
+      "title": "Python asyncio platform support",
+      "purpose": "Windows loops and subprocess differences",
+      "url": "https://docs.python.org/3/library/asyncio-platforms.html"
+    },
+    {
+      "title": "Python zipapp",
+      "purpose": "Source-only executable archives requiring Python",
+      "url": "https://docs.python.org/3/library/zipapp.html"
+    },
+    {
+      "title": "Python ctypes",
+      "purpose": "Permitted typed wrappers for built-in OS APIs only",
+      "url": "https://docs.python.org/3/library/ctypes.html"
+    },
+    {
+      "title": "Windows Job Objects",
+      "purpose": "Kill-on-close and inherited process containment",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects"
+    },
+    {
+      "title": "Windows job assignment",
+      "purpose": "Nested-job and assignment constraints",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject"
+    },
+    {
+      "title": "Windows token information",
+      "purpose": "Current-token identity/elevation checks",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation"
+    },
+    {
+      "title": "Windows GetSecurityInfo",
+      "purpose": "Handle-based security descriptor checks",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo"
+    },
+    {
+      "title": "Windows SetSecurityInfo",
+      "purpose": "Handle-based DACL/owner protection",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setsecurityinfo"
+    },
+    {
+      "title": "Linux parent-death signal",
+      "purpose": "prctl thread/exec/inheritance semantics and limits",
+      "url": "https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html"
+    },
+    {
+      "title": "Wheel format",
+      "purpose": "Platform tags, archive inventory and metadata",
+      "url": "https://packaging.python.org/en/latest/specifications/binary-distribution-format/"
+    }
+  ],
+  "note": "Pins record inspected source, not selected runtime package releases or completed security audits."
+}

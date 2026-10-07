@@ -1,0 +1,73 @@
+{
+  "baseline": {
+    "repository": "heetbeet/ssh-magic",
+    "version": "0.1.6",
+    "commit": "6c8e1517a236296103f22c9c11fd6f0e3c2db0ac",
+    "url": "https://github.com/heetbeet/ssh-magic/tree/6c8e1517a236296103f22c9c11fd6f0e3c2db0ac"
+  },
+  "inspected_files": [
+    {
+      "path": "go.mod",
+      "sha256": "0565a14f204cea955a7811e8838c7643c3c6c523d5e6770ae3ad2c05162d3292"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "fa9be4f1a11d5a680eb5c5c647e285cd59ad89001f4269aff796364bf0201df4"
+    },
+    {
+      "path": "main.go",
+      "sha256": "af8c0f09f3734fdcea6ad42698fa6cf5adf4c0a45b7371f36730df7978763e31"
+    },
+    {
+      "path": "runtime.go",
+      "sha256": "e15d4c7fef67cdb0a78219fce561dc8862b95566ecf7bf3860224b2cc9350fc4"
+    },
+    {
+      "path": "platform_windows.go",
+      "sha256": "76457f6569f95c67ee7c600420ca00d016da47077690645fb681407619b261fd"
+    },
+    {
+      "path": "platform_linux.go",
+      "sha256": "dee94cb9a0a28eb4356e03f728aecc2920b888a943823294f0c9caf93b1bece4"
+    },
+    {
+      "path": "install.go",
+      "sha256": "3765fe0f00ff61e9fcad8549986dd35910ccc6fea1d6c2d4bd9090a9e777ca0a"
+    },
+    {
+      "path": "install_windows.go",
+      "sha256": "276014ff946b431033b00a963d0851794bbee72b09d5d5f7a50b824d7e387b0e"
+    },
+    {
+      "path": "install_linux.go",
+      "sha256": "438af3c8a10b2e40becfbf8bf99e155b6f70ae0ecfdabc7d6b89d458ce1926f0"
+    },
+    {
+      "path": "boot.ps1",
+      "sha256": "a9d04310e00dc15425297fbf2aaa2eda8948836798e4faed377ea5388f7de361"
+    },
+    {
+      "path": "boot.sh",
+      "sha256": "071da79df41fe63148174fd7628d786b54bd9f35b19418ea3282cd6876e670b2"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c653c8efe94bc937bf64c84a77ea3b9a0333f39ebc2bed7537ab237428d9f0e4"
+    },
+    {
+      "path": "THIRD_PARTY.md",
+      "sha256": "a66d354366a31da77108ecb5f1e5c1649654a7a558fe744341c0e489f5c84b25"
+    },
+    {
+      "path": "docs/temp/iroh-source/Cargo.toml",
+      "sha256": "51429b8e7f757e90016530ed44edf5979b20d3524454da54dd077c05dd3dbff6"
+    },
+    {
+      "path": "docs/temp/iroh-source/Cargo.lock",
+      "sha256": "087d92e5a01e9361ecb459bee9d0009bb8d8a7a9a655d45197eac515d9252329"
+    }
+  ],
+  "go_dependency_count": 19,
+  "cargo_lock_package_count": 482,
+  "cargo_note": "All locked packages are accounted for as excluded with Iroh. This inventory is not a claim that every crate executes on all platforms."
+}

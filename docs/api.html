@@ -1,0 +1,107 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Importable API | ssh-snakehole</title><link rel="stylesheet" href="style.css"></head><body><header><a href="index.html">ssh-snakehole specification</a> / 6. Python API</header><main>
+<h1>The library is the product</h1>
+<p>The CLI is a thin caller of this API. Applications do not need a subprocess wrapper around the CLI, a background daemon or temporary SSH configuration files. The examples here are proposed contracts, not runnable code in this repository.</p>
+<h2 id="examples">Open, connect, work, close</h2>
+<pre># On the computer receiving help:
+import asyncio
+from ssh_snakehole import open_host
+
+async def main():
+    async with open_host() as host:
+        print(host.code, flush=True)
+        await host.wait_closed()
+
+asyncio.run(main())</pre>
+<pre># In an agent's Python process on the helping computer:
+from ssh_snakehole import connect
+
+async def assist(code):
+    async with connect(code) as session:
+        print(session.info.host_os, session.info.privilege)
+        result = await session.run("python --version")
+        print(result.stdout.decode("utf-8", errors="replace"))
+        await session.put("setup.py", "setup.py")
+        result = await session.run_argv(["python", "setup.py"])
+        result.check_returncode()
+        receipt = await session.close_host()
+        assert receipt.accepted
+
+# The application calls assist() in its existing event loop.</pre>
+<p>Context exit on the host always closes that host. Context exit on a connector closes its SSH connection only. An agent MUST call <code>close_host()</code> when the assistance task is done, or let the host's local owner end it. This ownership distinction permits reconnect without inadvertently revoking the invitation whenever a short operation finishes.</p>
+<pre># Reconnect from the same process without disk credentials:
+async with connect(code) as first:
+    ticket = first.ticket
+    await first.run_argv(["python", "--version"])
+
+async with connect(ticket) as second:
+    await second.get("report.txt", "report.txt")
+    await second.close_host()</pre>
+<h2 id="surface">Public calls and types</h2>
+<table><thead><tr><th>Call/type</th><th>Contract</th></tr></thead><tbody>
+<tr><td><code>open_host(*, lifetime=7200, admin=False, relay=None, executor=None, files=True)</code></td><td>Returns an async context manager yielding Host. Readiness checks and code allocation happen on context entry. Lifetime is positive, at most 7200 seconds. Relay is an explicit RelayConfig; None selects documented defaults. Admin declares mode, never elevates.</td></tr>
+<tr><td><code>connect(code_or_ticket, *, relay=None, timeout=40)</code></td><td>Returns an async context manager yielding Session after SSH authentication. Code pairing has its separate 120-second deadline. An explicit relay config cannot silently contradict a ticket; mismatches fail.</td></tr>
+<tr><td><code>Host.code</code></td><td>Code available only before pairing is accepted. Access afterwards raises CodeConsumed. Host repr always redacts it. No attempt to regenerate the same code.</td></tr>
+<tr><td><code>Host.info</code></td><td>Frozen HostInfo: session_id, host_os, display labels, privilege and expires_at. No secrets.</td></tr>
+<tr><td><code>await Host.wait_ready()</code></td><td>Returns HostInfo when the first SSH authentication succeeds; raises on expiry, pairing failure or earlier closure. Multiple waiters share the result.</td></tr>
+<tr><td><code>await Host.wait_closed()</code>, <code>await Host.aclose()</code></td><td>Wait returns a CloseReason. aclose is idempotent, owned local closure and waits for bounded cleanup. A second call does not stop another Host.</td></tr>
+<tr><td><code>Session.info</code>, <code>Session.ticket</code></td><td>Info is nonsecret. Ticket contains secrets and is caller-owned. It may reconnect only until the host expires/closes. No automatic serialization, copy to logs or persistence.</td></tr>
+<tr><td><code>await Session.run(command, *, stdin=b"", timeout=300, max_output=8*1024*1024)</code></td><td>Captures bounded combined stdout/stderr into a CommandResult. Default timeout is five minutes; None still cannot exceed host lifetime. Nonzero remote status is a result, not a transport error.</td></tr>
+<tr><td><code>await Session.run_argv(argv, *, stdin=b"", timeout=300, max_output=8*1024*1024)</code></td><td>Same result/capture rules, launches without a shell through the Snakehole argv channel request. Not a claim that native SSH exec has an argv field.</td></tr>
+<tr><td><code>Session.exec(command, *, timeout=None)</code></td><td>Async context manager yielding RemoteProcess for streaming. Exit cancels unfinished owned execution and closes the channel. No retained process object after context exit.</td></tr>
+<tr><td><code>RemoteProcess.stdout</code>, <code>.stderr</code></td><td>Independent async byte iterators. Single consumer each. Chunks at most 32 KiB. Consumers must drain both streams, or use run().</td></tr>
+<tr><td><code>await RemoteProcess.send(data)</code>, <code>.close_stdin()</code>, <code>.wait()</code></td><td>send applies backpressure. close_stdin is idempotent. wait returns CommandExit after confirmed status; connection loss without status raises OutcomeUnknown.</td></tr>
+<tr><td><code>await Session.put(local, remote, *, overwrite=False)</code>, <code>.get(remote, local, *, overwrite=False)</code></td><td>Returns TransferResult with bytes_copied and commit/durability facts. Streams files and commits as specified in chapter 5. Neither traverses directories automatically.</td></tr>
+<tr><td><code>Session.files</code></td><td>Lazy SFTP client for stat, listdir, open, mkdir, remove, rename, readlink and supported attribute operations. It shares SSH connection ownership. Explicit unsupported operations raise UnsupportedOperation.</td></tr>
+<tr><td><code>await Session.close_host()</code>, <code>await Session.aclose()</code></td><td>close_host returns CloseReceipt for remote revocation; aclose closes only the local connection. Idempotence does not manufacture remote confirmation.</td></tr>
+</tbody></table>
+<p>Do not expose algorithm selection, native-backend switches, legacy aliases or unimplemented options. RelayConfig holds mailbox URL, Transit URL and optional explicit direct bind/hint policy. It validates typed values once. The default AppID/protocol profile is fixed; developers writing a different application can use the lower-level pairing module deliberately rather than changing security identity through arbitrary CLI flags.</p>
+<h3>Result records</h3>
+<p>CommandResult contains <code>stdout: bytes</code>, <code>stderr: bytes</code>, <code>exit_code: int | None</code>, <code>exit_signal: str | None</code> and <code>elapsed: float</code>. <code>check_returncode()</code> raises RemoteCommandFailed for a confirmed nonzero exit/signal. A transport failure cannot be encoded as exit code 255 and confused with a real remote exit. CommandExit is the same status information without captured output.</p>
+<p>CloseReceipt contains <code>accepted</code>, <code>transport_closed</code> and a nonsecret local observation timestamp. TransferResult contains byte count, committed destination and <code>durable: bool | None</code>; None means unavailable/unrequested. No record claims all descendants stopped or remote data survived power loss without evidence.</p>
+<h2 id="streaming">Streaming without blocking the event loop</h2>
+<pre>import asyncio
+
+async def consume(stream, sink):
+    async for chunk in stream:
+        await sink(chunk)
+
+async with session.exec("long-running-command") as process:
+    await process.close_stdin()
+    async with asyncio.TaskGroup() as group:
+        group.create_task(consume(process.stdout, write_stdout))
+        group.create_task(consume(process.stderr, write_stderr))
+    status = await process.wait()</pre>
+<p>Blocking file work uses bounded thread offload; ordinary network state uses the caller's event loop. CPU-heavy crypto is chunked or offloaded to a small owned executor so parsing/keepalive deadlines stay responsive. Implementation chooses one approach and proves responsiveness before adding complexity. A cancelled worker may finish its current bounded operation, but cannot later send bytes for a closed session. No global executor or event-loop policy is installed at import.</p>
+<p>The package owns tasks created inside its contexts, cancels and awaits them on exit, and releases sockets/file handles even when user code raises. A single failing SSH connection does not terminate unrelated hosts. Network memory budget covers queued buffers; captured result bytes are separately bounded by max_output. Output-limit failure cancels execution and preserves capped partial output in the error. It must not silently truncate and return success.</p>
+<h2 id="embedding">Embedding an executor</h2>
+<p>An executor is one callable receiving a validated ExecRequest and returning a running process with byte stdin/stdout/stderr, wait and cancellation operations. ExecRequest carries either command text or argv, the session ID and the host-selected cwd. It never contains peer-selected environment or a private key. The built-in concrete executor uses stdlib subprocess. Tests and restricted applications can supply a small function with the same contract.</p>
+<p>A caller can set <code>files=False</code> to reject SFTP. A custom executor can implement an allowlist or virtual operation environment. The package does not describe that as a complete sandbox unless the caller also controls all filesystem and process effects. No abstract factory hierarchy or dynamic discovery is required.</p>
+<h3>Argv request on SSH</h3>
+<p>Use channel request <code>exec-argv@ssh-snakehole</code>, want-reply true. Payload is one SSH string containing strict UTF-8 JSON <code>{"version":1,"argv":[...]}</code>. At most 64 arguments and 64 KiB encoded payload; each argument is a string without NUL. There are no cwd, env or shell fields. A native peer without the extension rejects it; the library reports UnsupportedOperation rather than assembling a risky shell string. The host's SSH EXT_INFO advertises name <code>exec-argv@ssh-snakehole</code> with ASCII value <code>1</code> only when implemented.</p>
+<h2 id="errors">Errors and observability</h2>
+<table><thead><tr><th>Error family</th><th>Meaning and retry rule</th></tr></thead><tbody>
+<tr><td>InvalidCode, InvalidTicket, UnsupportedRuntime</td><td>Local validation/readiness failure. No remote execution occurred.</td></tr>
+<tr><td>PlatformContainmentUnavailable</td><td>Required OS isolation cannot be established. The default executor runs no operator payload; no weak native-helper fallback.</td></tr>
+<tr><td>PairingFailed, PairingExpired, CodeConsumed</td><td>Terminal invitation state. Start a new host/code rather than retrying PAKE guesses.</td></tr>
+<tr><td>RelayUnavailable, ConnectTimeout</td><td>Ticket can be retried before expiry. Do not retry an already-started command.</td></tr>
+<tr><td>HostKeyMismatch, AuthenticationFailed, ProtocolViolation</td><td>Fail closed. Never replace a pin or downgrade an algorithm. New pairing requires an explicit decision.</td></tr>
+<tr><td>OutcomeUnknown</td><td>The operation may have executed. Includes only safe partial-output/status observations, no automatic replay.</td></tr>
+<tr><td>CommandTimedOut, OutputLimitExceeded, RemoteCommandFailed</td><td>Execution/capture-specific result. Report whether remote cleanup/status was confirmed.</td></tr>
+<tr><td>TransferFailed, AtomicCommitUnavailable</td><td>Describe commit state and owned temporary-file residue, preserving the prior destination.</td></tr>
+<tr><td>SessionExpired, CloseUnconfirmed</td><td>Expiry or missing remote close acknowledgement; local forget is not confirmation.</td></tr>
+</tbody></table>
+<p>Exceptions inherit SnakeholeError and carry stable machine-readable <code>code</code> values plus nonsecret operation context. They preserve cancellation as <code>asyncio.CancelledError</code>. No default root logging configuration, terminal output or telemetry. A caller may subscribe to documented events for pairing phase, transport kind, authenticated connection, transfer byte counts and close reason. Do not emit command text, code, ticket, passphrase or plaintext buffers through events.</p>
+<h2 id="modules">Concrete module layout</h2>
+<pre>ssh_snakehole/
+  __init__.py, __main__.py  # exports and CLI entry
+  host.py, client.py       # ownership, public sessions
+  pairing.py, transit.py   # protocol state and stream adapter
+  ssh.py, sftp.py          # focused packet/channel/file engines
+  process.py, state.py     # subprocess policy and optional CLI vault
+  _platform/              # conditional, typed built-in OS wrappers
+  install.py, cli.py       # artifact/PATH workflow
+  _crypto/                # audited Python ports with notices
+  relay/                  # optional independently run Python relay service
+</pre>
+<p>This is a responsibility map, not permission to create empty modules/classes. Implement the first working vertical path with as few files as practical, then split actual cohesive code. No source code or API stubs are generated during this specification task.</p>
+</main><footer><a href="index.html">Contents</a> · <a href="cli-installation.html">Next: CLI and installation</a></footer></body></html>
