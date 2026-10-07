@@ -1,75 +1,32 @@
-"""Bounded JSON and SSH binary encodings shared by the protocol engines."""
+"""Bounded JSON, length prefixes and base64 for pairing and worker messages."""
+
 import base64
 import json
+import math
 import struct
+from typing import Any
 
 from .errors import ProtocolViolation
 
 U32 = struct.Struct(">I")
-U64 = struct.Struct(">Q")
 
 
-def uint(value):
+def uint(value: int) -> bytes:
     return U32.pack(value)
 
 
-def string(value):
-    if isinstance(value, str):
-        value = value.encode("utf-8")
-    return uint(len(value)) + value
+def json_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode("utf-8")
 
 
-def mpint(value):
-    if value < 0:
-        raise ValueError("Only nonnegative SSH integers are used")
-    data = value.to_bytes((value.bit_length() + 7) // 8, "big")
-    if data and data[0] & 128:
-        data = b"\0" + data
-    return string(data)
-
-
-class Reader:
-    def __init__(self, data):
-        self.data, self.pos = data, 0
-
-    def take(self, count):
-        if count < 0 or self.pos + count > len(self.data):
-            raise ProtocolViolation("Truncated binary record")
-        result = self.data[self.pos:self.pos + count]
-        self.pos += count
-        return result
-
-    def byte(self): return self.take(1)[0]
-    def uint(self): return U32.unpack(self.take(4))[0]
-    def uint64(self): return U64.unpack(self.take(8))[0]
-
-    def string(self, limit=262144):
-        count = self.uint()
-        if count > limit:
-            raise ProtocolViolation("Binary string exceeds limit")
-        return self.take(count)
-
-    def text(self, limit=16384):
-        try:
-            return self.string(limit).decode("utf-8")
-        except UnicodeError as exc:
-            raise ProtocolViolation("Invalid UTF-8") from exc
-
-    def done(self):
-        if self.pos != len(self.data):
-            raise ProtocolViolation("Trailing binary data")
-
-
-def json_bytes(value):
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")
-
-
-def parse_json(data, limit=8192):
+def parse_json(data: bytes, limit: int = 8192) -> Any:
     if len(data) > limit:
         raise ProtocolViolation("JSON record exceeds limit")
 
     def pairs(items):
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in items:
             if key in result or len(result) >= 128:
                 raise ValueError("Duplicate or excessive JSON keys")
@@ -83,10 +40,15 @@ def parse_json(data, limit=8192):
         if depth > 8:
             raise ValueError("JSON nesting exceeds limit")
         if isinstance(value, dict):
-            for item in value.values(): check(item, depth + 1)
+            for item in value.values():
+                check(item, depth + 1)
         elif isinstance(value, list):
-            if len(value) > 128: raise ValueError("JSON list exceeds limit")
-            for item in value: check(item, depth + 1)
+            if len(value) > 128:
+                raise ValueError("JSON list exceeds limit")
+            for item in value:
+                check(item, depth + 1)
+        elif isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("Non-finite JSON number")
 
     try:
         value = json.loads(data, object_pairs_hook=pairs, parse_constant=reject)
@@ -96,14 +58,17 @@ def parse_json(data, limit=8192):
         raise ProtocolViolation("Invalid JSON record") from exc
 
 
-def b64(data): return base64.b64encode(data).decode("ascii")
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
 
 
-def unb64(value, length=None):
+def unb64(value: str, length: int | None = None) -> bytes:
     try:
-        if not isinstance(value, str): raise ValueError()
+        if not isinstance(value, str):
+            raise ValueError()
         result = base64.b64decode(value, validate=True)
-        if length is not None and len(result) != length: raise ValueError()
+        if length is not None and len(result) != length:
+            raise ValueError()
         return result
     except (ValueError, TypeError) as exc:
         raise ProtocolViolation("Invalid base64 value") from exc

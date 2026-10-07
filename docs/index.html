@@ -1,30 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ssh-snakehole specification</title><link rel="stylesheet" href="style.css"></head><body>
-<header><a href="index.html">ssh-snakehole</a><span class="meta"> / specification v0.1 / 7 October 2026</span></header>
-<main><h1>Temporary SSH, as a Python library</h1>
-<p>One person opens access and reads out a short code. Another person or an agent redeems it, runs commands and transfers files through genuine SSH, then closes access. Both computers make outbound connections, so the normal internet workflow needs no router configuration. The host runs in the foreground under the person who opened it.</p>
-<p class="note">A working 0.1.0 implementation is now present. Read the <a href="usage.html">command matrix</a> and <a href="implementation.html">test evidence and limits</a>. It has not had an independent security review. The design allows Python's standard library and excludes extra native crypto extensions and networking helper executables.</p>
-<h2>The chosen structure</h2>
-<p>The core is an asyncio library named <code>ssh_snakehole</code>. Python's <code>ssl</code> handles TLS and certificate validation. A small, source-audited pure Python WebSocket dependency carries Magic Wormhole pairing. The used SPAKE2 and SecretBox operations are ported to Python. Magic Wormhole Transit replaces Iroh and carries an SSH byte stream. A focused Python SSH client/server and SFTP v3 implementation provide the actual remote access.</p>
-<p>The simplest default uses a relay for bulk traffic. Direct TCP is an explicit deployment option. QUIC, automatic UDP hole punching, network migration and Iroh endpoint compatibility are excluded from the first product. That is a deliberate transport replacement, with different availability characteristics. Reimplementing Iroh would be a much larger project.</p>
-<p>Standard Python does not expose the raw X25519, Ed25519, XSalsa20 or SSH ChaCha20 operations this needs. Those are the remaining difficult ports. Their correctness, performance and timing behavior must pass release gates before this becomes a tool people rely on.</p>
-<h2>Read the specification</h2>
-<div class="grid">
-<div class="card"><a href="scope-parity.html">1. Scope and current-product parity</a><p>Definitions, supported systems, audited behavior, requirements and explicit changes.</p></div>
-<div class="card"><a href="dependencies.html">2. Dependencies and port decisions</a><p>What can be imported, what must be ported, what is removed, and where the code comes from.</p></div>
-<div class="card"><a href="pairing-transport.html">3. Pairing and internet transport</a><p>Codes, mailbox messages, PAKE, session tickets, Transit, reconnecting and relay deployment.</p></div>
-<div class="card"><a href="ssh-crypto.html">4. SSH and cryptography</a><p>Algorithms, packet handling, authentication, rekeying, channels and cryptographic boundaries.</p></div>
-<div class="card"><a href="files-processes-platforms.html">5. Files, processes and operating systems</a><p>SFTP contracts, path rules, command execution, privilege, persistence and cleanup limits.</p></div>
-<div class="card"><a href="api.html">6. Importable Python API</a><p>Concrete calls, ownership, cancellation, streams, errors and embedding examples.</p></div>
-<div class="card"><a href="cli-installation.html">7. CLI, bootstrap and installation</a><p>The command matrix, credentials, offline artifacts, PATH and repeat-safe installation.</p></div>
-<div class="card"><a href="security.html">8. Security and failure handling</a><p>Trust, limits, revocation, diagnostics, local threats and behavior under interruption.</p></div>
-<div class="card"><a href="validation-delivery.html">9. Validation and delivery</a><p>Interoperability, adversarial cases, platform evidence, acceptance gates and build order.</p></div>
-<div class="card"><a href="sources.html">10. Research sources</a><p>Pinned upstream revisions, standards and the evidence behind the decisions.</p></div>
-</div>
-<h2>How to use this document</h2>
-<p>MUST and MUST NOT are product requirements. SHOULD identifies a default that needs a documented reason to change. Existing behavior is evidence from SSH Magic, not a promise that a Python replacement already delivers it. Proposed signatures and commands describe the target API. Source references distinguish upstream facts from our design choices.</p>
-<p>The <a href="dependency-ledger.csv">dependency ledger</a> accounts for the current product's direct and indirect Go dependencies, its Iroh transport and the proposed Python replacements. <a href="sources.json">Source pins</a> make the research reproducible. No code from a candidate is approved merely because it appears in the ledger.</p>
-<h2>Four decisions that shape the work</h2>
-<ol><li>The revised definition of pure Python includes ordinary standard-library imports. Porting TLS, SHA or operating-system socket code would add work without serving that requirement.</li><li>Keep real SSH interoperability. A custom command protocol over TLS would be easier but would not satisfy SSH clients and agents.</li><li>Use Transit rather than porting Rust's QUIC ecosystem. Reconnect uses a live host and a session ticket; commands are never replayed automatically.</li><li>Keep credentials in memory in the library. An optional encrypted CLI vault supports separate command invocations without claiming Windows <code>chmod</code> enforces Unix permissions.</li></ol>
-<p>Platform adapters may use standard-library ctypes for built-in OS security/process APIs. They must not load native crypto or transport code. The platform chapter specifies Windows Job Object ownership, Unix pipe-watcher cleanup and the remaining cleanup/elevation limits. The project must not claim stronger guarantees than it demonstrates.</p>
-</main><footer>Local specification. Existing SSH Magic remains unchanged. Start implementation only after the gates in chapter 9 are understood.</footer></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Temporary SSH, installed as a Python package</title><link rel="stylesheet" href="style.css"></head><body>
+<header><a href="index.html">ssh-snakehole</a><span class="meta"> / 0.2.1 / 7 October 2026</span></header><main><h1>Temporary SSH, installed as a Python package</h1>
+<p>A foreground Python process prints a one-use code. The operator redeems it, gains authenticated SSH command and SFTP access as the host account, then closes access. Both computers make outbound connections; no router configuration is required.</p>
+<p>The current design uses AsyncSSH, cryptography, PyNaCl and upstream spake2. Python's ordinary pip and venv tools provide installation, including offline wheel installation. Run <code>python -m ssh_snakehole open</code>.</p>
+<p><a href="usage.html">Command matrix and library API</a> | <a href="implementation.html">Dependency decisions, audit findings and verified platforms</a></p>
+
+</main>
+<footer><a href="usage.html">Usage</a> | <a href="implementation.html">Evidence and boundaries</a></footer></body></html>

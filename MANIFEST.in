@@ -1,0 +1,3 @@
+include requirements-dev.txt
+include docs/index.html docs/usage.html docs/implementation.html docs/style.css
+include tools/audit_runtime.py tools/reference_pairing.py

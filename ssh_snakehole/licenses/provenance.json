@@ -1,12 +1,5 @@
 [
   {
-    "source": "https://raw.githubusercontent.com/warner/python-spake2/a13d32d2b6cc5945eca182c4f89b6b4bafb2d78a/src/spake2/ed25519_basic.py",
-    "source_sha256": "d883657576f3e778abf3fdf9e76dec61d92e3013199f3bd485e36b722820b9f9",
-    "output": "_crypto/edwards.py",
-    "output_sha256": "b36563cb27e5bd57a8600a786b42affa8f651f6fb1ebe84ab403fe6c69768fe6",
-    "changes": "AST normalization; stdlib HKDF import; omit unused negate/subtract/scalar serializer"
-  },
-  {
     "source": "https://raw.githubusercontent.com/magic-wormhole/magic-wormhole/cc6160670bf7faaab52ba307e3f8ba95e80529fe/src/wormhole/_wordlist.py",
     "source_sha256": "22533fb246cbf0578d92375bb8cd6cc8c1b4d06908dd46a0dd85235298dd6bcf",
     "output": "words.json",
