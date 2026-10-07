@@ -1,0 +1,6 @@
+# Independent test peers/oracles only. Never install these into the runtime artifact.
+asyncssh==2.24.1
+cryptography==50.0.2
+PyNaCl==1.6.2
+spake2==0.9
+magic-wormhole==0.24.0

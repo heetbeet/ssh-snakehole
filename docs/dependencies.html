@@ -27,7 +27,7 @@
 <tr><td>SSH bulk encryption</td><td>Python OpenSSH ChaCha20-Poly1305 construction</td><td>Pinned OpenSSH cipher differential fixtures, strict KEX/rekey tests</td></tr>
 <tr><td>SSH transport, auth and channel messages</td><td>Focused protocol implementation against SSH standards</td><td>Independent client and server interoperability, malformed input bounds</td></tr>
 <tr><td>SFTP client and server</td><td>Python SFTP v3 codecs and operations plus explicit OpenSSH extensions</td><td>Independent transfers, path rules, overwrite and interrupted commit tests</td></tr>
-<tr><td>Go locks, OS process/security calls, atomic JSON/cache and installation</td><td>Standard-library locks/files/zip import and narrowly scoped ctypes OS wrappers</td><td>Cross-process contention, interrupted writes, owner/path checks, Job Object/token/ACL and Linux parent-death cases</td></tr>
+<tr><td>Go locks, OS process/security calls, atomic JSON/cache and installation</td><td>Standard-library locks/files/zip import and narrowly scoped ctypes OS wrappers</td><td>Cross-process contention, interrupted writes, owner/path checks, Job Object/token/ACL and Unix pipe-watcher lifetime cases</td></tr>
 <tr><td>Terminal formatting, logging, progress, PTY and compression dependencies</td><td>Omit unused behavior; plain stderr, binary pipes, streaming counters</td><td>No terminal escape injection, no unsolicited logs, no unbounded output capture</td></tr>
 </tbody></table>
 <p>Additional native cryptographic operations are not hidden in <code>ssl</code>. Its public API supplies TLS connections, not arbitrary Ed25519 signing, X25519 multiplication or the OpenSSH cipher. Those ports remain necessary. Do not invoke private OpenSSL functions to avoid implementing them.</p>
