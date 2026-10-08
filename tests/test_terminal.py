@@ -189,6 +189,22 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.relay.aclose()
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows console key events")
+    async def test_windows_raw_key_reader_receives_emoji(self):
+        fixture = Path(__file__).with_name("windows_key_reader.py")
+        command = f"& '{sys.executable}' '{fixture}'"
+        text = "é 汉 🐍"
+        async with open_host(relay=self.config) as host:
+            async with connect(host.code, relay=self.config) as session:
+                async with session.terminal(command) as process:
+                    out = Output(process.stdout)
+                    await out.until(b"KEY-READY")
+                    await process.send(text.encode() + b"\r")
+                    await out.until(("KEY-TEXT-" + text.encode().hex()).encode())
+                    await process.stdout.read()
+                    self.assertEqual((await process.wait()).exit_code, 0)
+                await session.close_host()
+
     async def test_explicit_lifetime_ends_terminal_with_a_clear_error(self):
         from ssh_snakehole.errors import SessionExpired
 

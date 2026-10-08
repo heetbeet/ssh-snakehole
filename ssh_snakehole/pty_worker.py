@@ -98,6 +98,20 @@ def serve(request, descriptor):
                     if sys.platform == "win32":
                         text = decoder.decode(data)
                         if text:
+                            # VT text is not a physical down/up pair. ConPTY's
+                            # default surrogate key-up synthesis breaks raw-key
+                            # readers. Explicit Unicode key-downs preserve pairs.
+                            text = "".join(
+                                char
+                                if ord(char) <= 0xFFFF
+                                else "".join(
+                                    f"\x1b[0;0;{unit};1;0;1_"
+                                    for unit in struct.unpack(
+                                        "<HH", char.encode("utf-16-le")
+                                    )
+                                )
+                                for char in text
+                            )
                             pty.write(text)
                     else:
                         view = memoryview(data)
