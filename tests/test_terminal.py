@@ -50,6 +50,7 @@ class LocalTTY:
 
     def __init__(self, argv, environment, *, emulate=True):
         self.size = [100, 30]
+        self.keys = {"left": "\x1b[D", "end": "\x1b[F"}
         self.emulator = (
             subprocess.Popen(
                 ["node", str(Path(__file__).with_name("terminal_emulator.cjs"))],
@@ -93,7 +94,7 @@ class LocalTTY:
             os.write(self.master, data)
 
     async def key(self, key):
-        await self.send({"left": b"\x1b[D", "end": b"\x1b[F"}[key])
+        await self.send(self.keys[key].encode())
 
     def resize(self, width, height):
         self.size = [width, height]
@@ -135,6 +136,7 @@ class LocalTTY:
                 )
                 self.emulator.stdin.flush()
                 state = json.loads(self.emulator.stdout.readline())
+                self.keys = state["keys"]
                 if state["replies"]:
                     await self.send(state["replies"].encode())
                 return data
@@ -493,7 +495,7 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                             await out.until(b"> ")
                             await tty.send(b"Write-Output ('REAL'+'SHELL')\r")
                         else:
-                            await asyncio.sleep(0.2)
+                            await out.until(b"$ ")
                             await tty.send(b"printf 'REAL%s\\n' SHELL\r")
                         await out.until(b"REALSHELL\r\n")
                         await tty.send(
@@ -510,7 +512,9 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         # Left arrow and backspace must reach Python's line editor.
                         await tty.send(b"print('EDIT'+str(6*8))")
                         await asyncio.sleep(0.1)
-                        await tty.send(b"\x1b[D\x1b[D\x7f7\r")
+                        await tty.key("left")
+                        await tty.key("left")
+                        await tty.send(b"\x7f7\r")
                         await out.until(b"EDIT42")
                         await out.until(b">>> ")
                         tty.resize(104, 37)

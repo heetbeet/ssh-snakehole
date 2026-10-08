@@ -13,7 +13,9 @@ function report() {
   const buffer = terminal.buffer.active;
   const screen = Array.from({length: terminal.rows}, (_, y) =>
     buffer.getLine(buffer.viewportY + y)?.translateToString(true) || '').join('\n');
-  process.stdout.write(JSON.stringify({screen, buffer: buffer.type, replies}) + '\n');
+  const prefix = terminal.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[';
+  const keys = {left: prefix + 'D', end: prefix + 'F'};
+  process.stdout.write(JSON.stringify({screen, buffer: buffer.type, replies, keys}) + '\n');
   replies = '';
 }
 readline.createInterface({input: process.stdin}).on('line', line => {

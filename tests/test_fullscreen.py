@@ -37,6 +37,7 @@ class Screen:
             if not reply:
                 raise AssertionError("Terminal emulator stopped")
             self.state = json.loads(reply)
+            self.terminal.keys = self.state["keys"]
             self.alternate |= self.state["buffer"] == "alternate"
             if self.state["replies"]:
                 await self.terminal.send(self.state["replies"].encode())
@@ -120,7 +121,7 @@ class FullScreen(unittest.IsolatedAsyncioTestCase):
                         )
                         await out.until(b"> ")
                     if sys.platform != "win32":
-                        await asyncio.sleep(0.5)
+                        await out.until(b"$ ")
                     await tty.send(command.encode())
                     screen = Screen(emulator, tty)
                     copying = asyncio.create_task(screen.copy())
