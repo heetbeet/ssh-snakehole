@@ -21,6 +21,7 @@ k.OpenJobObjectW.restype = w.HANDLE
 k.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
 k.SetInformationJobObject.argtypes = [w.HANDLE, c.c_int, c.c_void_p, w.DWORD]
 k.TerminateJobObject.argtypes = [w.HANDLE, w.UINT]
+k.TerminateProcess.argtypes = [w.HANDLE, w.UINT]
 a.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, c.POINTER(w.HANDLE)]
 a.GetTokenInformation.argtypes = [
     w.HANDLE,

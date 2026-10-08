@@ -33,7 +33,29 @@ class ServerChannel:
             )
 
 
-def shell_command(command: str) -> tuple[str | list[str], bool]:
+def login_shell() -> list[str]:
+    if sys.platform == "win32":
+        return [
+            os.path.join(
+                os.environ["SystemRoot"],
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe",
+            ),
+            "-NoLogo",
+        ]
+    import pwd
+
+    shell = os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell
+    if not shell or shell.endswith(("/nologin", "/false")):
+        shell = "/bin/sh"
+    return [shell]
+
+
+def shell_command(
+    command: str, *, terminal: bool = False
+) -> tuple[str | list[str], bool]:
     if "\0" in command or len(command.encode("utf-8")) > 65536:
         raise UnsupportedOperation("Invalid command text")
     if sys.platform == "win32":
@@ -47,7 +69,7 @@ def shell_command(command: str) -> tuple[str | list[str], bool]:
             ),
             "-NoLogo",
             "-NoProfile",
-            "-NonInteractive",
+            *([] if terminal else ["-NonInteractive"]),
             "-Command",
             command,
         ], False
@@ -67,8 +89,16 @@ def parse_argv(payload: bytes) -> list[str]:
 
 
 async def serve_command(
-    channel: ServerChannel, command: str | list[str], shell: bool, *, cwd: str
+    channel: ServerChannel,
+    command: str | list[str],
+    shell: bool,
+    *,
+    cwd: str,
+    terminal: dict | None = None,
 ) -> None:
+    request = json_bytes({"command": command, "shell": shell, "terminal": terminal})
+    if len(request) > 65536:
+        raise UnsupportedOperation("Command request exceeds limit")
     job = create_job() if sys.platform == "win32" else None
     process = None
     tasks = []
@@ -79,28 +109,43 @@ async def serve_command(
             read_fd, write_fd = os.pipe()
         root = str(Path(__file__).resolve().parent.parent)
         worker = "import sys;sys.path.insert(0,sys.argv.pop(1));from ssh_snakehole.worker import main;main()"
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            *(["-I"] if sys.flags.isolated else []),
-            "-c",
-            worker,
-            root,
-            job.name if job else "",
-            str(os.getpid()),
-            str(read_fd or 0),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=sys.platform != "win32",
-            limit=65536,
-            cwd=cwd,
-            pass_fds=(read_fd,) if read_fd is not None else (),
-            env={
-                key: value
-                for key, value in os.environ.items()
-                if not key.startswith("SSH_SNAKEHOLE_")
-            },
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                sys.executable,
+                *(["-I"] if sys.flags.isolated else []),
+                "-c",
+                worker,
+                root,
+                job.name if job else "",
+                str(os.getpid()),
+                str(read_fd or 0),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=sys.platform != "win32",
+                limit=65536,
+                cwd=cwd,
+                pass_fds=(read_fd,) if read_fd is not None else (),
+                env={
+                    key: value
+                    for key, value in os.environ.items()
+                    if not key.startswith("SSH_SNAKEHOLE_")
+                },
+            )
         )
+        try:
+            process = await asyncio.shield(spawning)
+        except asyncio.CancelledError:
+            # A cancelled spawn can leave a child and partially connected pipes.
+            # Obtain ownership first, then let the common cleanup stop it.
+            while True:
+                try:
+                    process = await asyncio.shield(spawning)
+                    break
+                except asyncio.CancelledError:
+                    if spawning.cancelled():
+                        raise
+            raise
         stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
         assert stdin is not None and stdout is not None and stderr is not None
         if read_fd is not None:
@@ -109,14 +154,35 @@ async def serve_command(
         async with asyncio.timeout(10):
             if await stdout.readexactly(6) != b"READY\n":
                 raise UnsupportedOperation("Command containment failed")
-        request = json_bytes({"command": command, "shell": shell})
         stdin.write(uint(len(request)) + request)
         await stdin.drain()
 
         async def input_pipe():
             try:
-                while data := await channel.stdin.read(32768):
-                    stdin.write(data)
+                while True:
+                    try:
+                        data = await channel.stdin.read(32768)
+                        if not data:
+                            break
+                        frame = b"D" + data if terminal else data
+                    except asyncssh.TerminalSizeChanged as event:
+                        if not terminal or not all(
+                            1 <= n <= 1000 for n in event.term_size[:2]
+                        ):
+                            continue
+                        frame = b"R" + uint(event.width) + uint(event.height)
+                    except asyncssh.SignalReceived as event:
+                        if not terminal or event.signal not in (
+                            "INT",
+                            "QUIT",
+                            "TERM",
+                            "HUP",
+                            "KILL",
+                            "WINCH",
+                        ):
+                            continue
+                        frame = b"S" + event.signal.encode("ascii")
+                    stdin.write(uint(len(frame)) + frame if terminal else frame)
                     await stdin.drain()
             except (BrokenPipeError, ConnectionResetError):
                 pass
@@ -135,6 +201,9 @@ async def serve_command(
         # Pipe EOF can be held open by surviving children. Observe the worker's
         # exit first, then close its owned command tree before draining the pipes.
         while process.returncode is None:
+            for task in tasks:
+                if task.done() and not task.cancelled():
+                    task.result()
             await asyncio.sleep(0.01)
         status = process.returncode
         if job:
@@ -151,25 +220,48 @@ async def serve_command(
                 os.close(descriptor)
         if job:
             job.close()
-        elif process and sys.platform != "win32":
+        if process:
+            # Cancellation can precede the input pump (even the READY packet).
+            # Close this pipe explicitly so asyncio can finish its transport.
+            if process.stdin:
+                process.stdin.close()
             # The acknowledged pipe watcher owns group termination. After it
             # exits, the numeric group ID may be retired or reused. Never signal
             # that group from the parent; kill only our still-running worker.
             with contextlib.suppress(ProcessLookupError):
                 if process.returncode is None:
                     process.kill()
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        if process:
-            with contextlib.suppress(TimeoutError):
 
-                async def drain(pipe):
-                    while await pipe.read(32768):
-                        pass
+        async def finish():
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if process:
+                with contextlib.suppress(TimeoutError):
 
-                async with asyncio.timeout(5):
-                    await asyncio.gather(
-                        process.wait(), drain(process.stdout), drain(process.stderr)
-                    )
+                    async def drain(pipe):
+                        while await pipe.read(32768):
+                            pass
+
+                    async with asyncio.timeout(5):
+                        await asyncio.gather(
+                            process.wait(), drain(process.stdout), drain(process.stderr)
+                        )
+
+        # Channel close and connection close can cancel the same handler twice.
+        # Finish draining owned pipes even when that second cancellation arrives.
+        cleanup = asyncio.create_task(finish())
+        cancelled = False
+        try:
+            while True:
+                try:
+                    await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+                    if cleanup.cancelled():
+                        raise
+        finally:
+            if cancelled:
+                raise asyncio.CancelledError

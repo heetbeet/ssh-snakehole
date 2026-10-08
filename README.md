@@ -1,26 +1,20 @@
 # ssh-snakehole
 
-Temporary SSH command and file access for people, Python programs and agents.
-Both computers connect outward to pair, then try a direct UDP connection using
-ICE. SSH uses a reliable, ordered WebRTC data channel when that succeeds, or the
-relay when it does not. No port forwarding or SSH daemon is needed.
+Temporary SSH access through a one-use invitation. Both computers connect outward,
+then try UDP hole punching with ICE. SSH uses a reliable WebRTC data channel when
+that works and a relay otherwise. No port forwarding or SSH daemon is required.
 
-This is a work in progress. Public PyPI releases will wait until the edge cases
-are resolved and we are happy with the library.
-
-Requires CPython 3.11-3.14. Install from GitHub with Git available:
+This is a work in progress. Install from GitHub or a checkout; public PyPI releases
+will wait until the remaining edge cases are resolved. Requires CPython 3.11-3.14;
+interactive Windows hosts use ConPTY on Windows 10 1809 or later.
 
 ```sh
 python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git
-```
-
-Or, from a downloaded or cloned checkout:
-
-```sh
+# Or from a downloaded or cloned checkout:
 python -m pip install .
 ```
 
-## Open access
+## Open a remote shell
 
 On the computer being assisted:
 
@@ -28,98 +22,76 @@ On the computer being assisted:
 python -m ssh_snakehole open
 ```
 
-Read its one-use code to the operator and leave the terminal open. On the
-operator's computer:
+Read its one-use CODE to the operator and leave that terminal open. The operator runs:
 
 ```sh
-python -m ssh_snakehole connect
+python -m ssh_snakehole connect CODE
 ```
 
-Enter CODE at the hidden prompt. If your command line is trusted and unrecorded,
-you can also use `python -m ssh_snakehole connect CODE`. Arguments can appear in
-shell history, process listings and tool logs, even when history saving is disabled.
-Hidden input remains the default. CODE and `--code-stdin` cannot be combined.
+This opens the remote account's shell: PowerShell on Windows, the user's shell on
+Unix. Its prompt, working directory, variables, interactive Python, colors and
+terminal resizing work through a real SSH PTY. Ctrl+C reaches the remote program.
+Type `exit` to disconnect. Host Ctrl+C revokes access immediately.
 
-The connection opens a command prompt and shows:
+Before opening the shell, `connect` prints a reconnection token. Keep it if you want
+to reconnect later. The invitation CODE is consumed; the new token unlocks encrypted
+credentials saved on the operator's computer. Neither CODE nor token is stored as plaintext.
 
-```text
-Reconnection token: snake1_<token>
-Keep this private if you want to reconnect later. It unlocks the saved credentials here.
-If connection fails, use resume with this token.
+## Agent commands
 
-Connected to HOST as USER.
-Transport: direct-udp
-
-Access expires after 30 minutes of inactivity.
-Type close to revoke access; exit disconnects this client.
-```
-
-Type remote commands at `snakehole>`. Each runs independently through PowerShell
-on Windows or /bin/sh on Unix. Working-directory and environment changes do not
-carry between commands. This prompt executes commands without a PTY.
-
-The displayed transport is `direct-udp` or `relay`. ICE uses local addresses and
-STUN to try UDP hole punching across routers. Some NATs and firewalls prevent it;
-the existing relay remains the fallback. Connection setup can take several seconds
-while ICE tries candidates. Reuse a Python `Session` for repeated operations.
-
-The default STUN server is `stun.l.google.com:19302`. Set
-`--stun stun:HOST:PORT` before the subcommand to use your own, or `--stun none`
-to gather local addresses only. A reachable Transit relay is required for setup
-even when SSH later travels directly. Neither direct UDP nor relay routing grants
-access without the pinned SSH identities established through CODE.
-
-Use `close` when finished. It revokes access for everyone sharing this host session.
-`exit`, EOF or operator Ctrl+C disconnects this client and leaves time to reconnect.
-Host Ctrl+C revokes access immediately.
-
-## Follow-up commands
-
-These ask for the reconnection token through hidden input:
+Exchange CODE without opening a terminal, then use the returned token:
 
 ```sh
-python -m ssh_snakehole resume
-python -m ssh_snakehole exec "COMMAND"
-python -m ssh_snakehole put local-file remote-file
-python -m ssh_snakehole get remote-file local-file
-python -m ssh_snakehole close
+python -m ssh_snakehole pair CODE
+# Prints: snake1_<token>
+python -m ssh_snakehole exec --token TOKEN "COMMAND"
+python -m ssh_snakehole resume --token TOKEN
+python -m ssh_snakehole put --token TOKEN local-file remote-file
+python -m ssh_snakehole get --token TOKEN remote-file local-file
+python -m ssh_snakehole close --token TOKEN
 ```
 
-The original CODE is consumed. The independently generated token selects exactly
-one session and unlocks its encrypted local credentials. Neither secret is saved.
-You need both the token and encrypted ticket to reconnect from another computer.
-Keep the token out of shell arguments, history, logs and the clipboard.
+`exec` streams stdout, stderr and piped stdin, and returns the remote shell's exit
+status. Each `exec` starts a separate shell; use `resume` or the Python API's
+`terminal()` for persistent shell state. Transfers refuse overwrites unless
+`--overwrite` is supplied. `close` revokes every controller sharing this host session
+and removes the local ticket. Separate `open` sessions are independent.
 
-File transfers refuse overwrites unless `--overwrite` is supplied. `status` shows
-saved information without checking online availability; `forget` deletes saved
-credentials without revoking remote access.
+CODE can be passed directly on the command line. It cannot be reused after pairing,
+but someone who obtains it before redemption could connect first. The reconnection
+token stays usable while access is open, so arguments containing it can be a risk
+in shell history, process listings or tool logs. Omit CODE or `--token` for hidden
+input, or use `--code-stdin` / `--token-stdin` from a trusted runner. A token line
+on stdin may be followed by command input for `exec`.
+
+`status --token TOKEN` shows saved host information; it does not check online
+availability. `forget --token TOKEN` deletes the local ticket without closing the
+host. Another operator computer needs both token and encrypted ticket.
 
 ## Long-running work
 
-Commands and open file transfers pause the host's inactivity timer. A fresh full
-30 minutes starts after the last concurrent operation finishes, including commands
-with nonzero exits. A quiet command lasting more than 30 minutes is not disconnected
-for inactivity. Commands have no default time limit; `exec --timeout SECONDS` opts in.
+Commands, open interactive shells and open file transfers pause the inactivity
+timer. A fresh 30 minutes starts after the last operation finishes or disconnects,
+including nonzero exits. A quiet Python REPL or long command stays connected.
+Idle SSH connections without active work and automatic transport keepalives do
+not renew access.
 
-To keep access open between operations, run this in a foreground subprocess:
+Between agent commands, an owned foreground subprocess can renew access every
+20 minutes:
 
 ```sh
-python -m ssh_snakehole keepalive --interval 1200
+python -m ssh_snakehole keepalive --token TOKEN --interval 1200
 ```
 
-Enter the token once. The process holds it in memory and renews access every
-20 minutes. Stop that process when finished; an agent must own and clean up its
-keepalive subprocess. It exits if SSH closes. `keepalive` without an interval sends one renewal. Normal
-authenticated commands such as `echo keepalive` also renew access. Idle SSH sockets
-and automatic transport keepalives do not renew it.
+Stop it when finished. `keepalive` without an interval sends one renewal.
+`exec --timeout SECONDS` opts into a command limit. Host `open --lifetime SECONDS`
+sets a hard limit which can interrupt active work. Neither limit is imposed by default.
+Invitations expire after ten minutes; first SSH authentication must follow pairing
+within two minutes, including when using `pair`.
 
-An explicit host `open --lifetime SECONDS` sets a hard limit which can interrupt
-active work. There is no default hard limit. Unredeemed invitations expire after
-ten minutes; first SSH authentication must follow pairing within two minutes.
+## Python API
 
-## Agents and the Python API
-
-The API keeps credentials in memory and needs neither saved tickets nor tokens:
+The API keeps credentials in memory and needs no saved ticket or token:
 
 ```python
 from ssh_snakehole import connect
@@ -134,54 +106,65 @@ async def assist(code):
         await session.close_host()
 ```
 
-Supply `code` from a trusted secret provider. Keep the same `Session` for repeated
-commands and transfers. `session.exec()` exposes byte streams for sending input
-and receiving output; captured `run()` output defaults to 8 MiB. Retain
-`session.ticket` for reconnection. Lost commands are never replayed.
-`await session.keepalive()` renews inactivity without launching a command.
+Reuse the same `Session` for repeated commands and transfers. `session.exec()`
+exposes byte streams for input and output. `session.terminal()` opens the remote
+shell with a PTY; pass a command to run an interactive program instead. Its process
+supports `send(bytes)`, `stdout.read(32768)`, `resize(columns, rows)` and `wait()`.
+PTY stdout and stderr are combined by the operating system, as with normal SSH.
+Terminal input is UTF-8 on Windows. Use a UTF-8 locale on Unix when connecting
+from Windows. SSH carries bytes rather than negotiating an encoding; the API's
+Unix PTYs and every platform's `exec` streams preserve bytes, including Latin-1.
+Colors and full-screen programs use your terminal's VT support and `TERM` value.
+Use a current terminal, such as Windows Terminal. Fonts still determine which
+Unicode characters can be displayed.
+Captured `run()` output defaults to 8 MiB. Retain `session.ticket` for reconnection;
+`await session.keepalive()` renews inactivity without a shell command.
 
-For separate CLI processes, use `connect --code-stdin --detach`. Supply CODE through
-a dedicated stdin pipe. It prints only the new token on stdout. Follow-up commands
-accept `--token-stdin`; the trusted runner supplies the token from memory through
-stdin. Do not construct `echo TOKEN | ...` or put a secret literal in a tool call.
-The runner must not log secret input or token output.
+## Routing and recovery
 
-## Recovery
+The connection displays `direct-udp` or `relay`. Some NATs and firewalls prevent
+UDP punching; relay fallback remains available. A reachable Transit relay is
+required for initial negotiation even when SSH later travels directly. Setup can
+take several seconds; reuse a Python Session for repeated work.
 
-If initial SSH setup fails after pairing, keep the printed token and run `resume`.
-`connect --detach` prints that token before connecting, so trusted runners should
-retain it even if the command exits unsuccessfully. The API attaches the accepted
-ticket to `ConnectTimeout` and `RelayUnavailable`; retry with `connect(error.ticket)`.
+Secure relays verify against certifi's Mozilla CA bundle. Set `SSL_CERT_FILE`
+for an explicitly trusted private CA bundle; certificate verification stays enabled.
 
-A lost connection ends that SSH session. Reconnect using the token or retained
-ticket; ICE tries again and may select a different route. An established session
-does not silently switch transports. A command interrupted without a confirmed
-exit reports `OutcomeUnknown`. Inspect its effects before retrying: commands are
-never automatically replayed, and a lost file-publication reply can also leave
-commit status unknown. Failed `close` is unconfirmed, rather than claiming access
-was revoked; retry it while the host remains available.
+Default STUN is `stun.l.google.com:19302`. Before the subcommand, use
+`--stun stun:HOST:PORT` to select another server or `--stun none` for local candidates.
 
-Both peers need version 0.4.0 for this protocol. Start a fresh invitation after
-upgrading; tickets from earlier versions are not converted.
+If first SSH setup fails after pairing, use `resume --token TOKEN` with the token
+already printed. `pair` saves the ticket and prints its token without dialing SSH.
+The API attaches accepted tickets to `ConnectTimeout` and `RelayUnavailable`.
 
-The package installs no service and makes no PATH edits. It uses aiortc for
-ICE, DTLS and SCTP, alongside AsyncSSH,
-cryptography, PyNaCl, spake2 and bcrypt. Encrypted files protect against file copying;
-they cannot protect live credentials from malware controlling your account or
-reading permitted process memory. Deliberate file/software changes remain after
-close. This library has not received an independent security audit.
+An interrupted session does not switch transports or replay commands. Reconnect
+with the token or retained ticket; each new connection tries ICE again.
+`OutcomeUnknown` means no exit status was confirmed. Inspect effects before retrying;
+file publication and remote close can also remain unconfirmed after a lost reply.
+Upgrade both peers to 0.5.0 and open a fresh invitation for terminal support.
 
-See [the command matrix, native SSH and offline installation](docs/usage.html) or
+The package installs no service and edits no PATH or global SSH settings. AsyncSSH
+owns SSH and SFTP; aiortc owns the reliable ICE transport; ptyprocess and pywinpty
+supply native terminals. Encrypted tickets protect against file copying, but cannot
+protect credentials from malware controlling your account. Intentional software
+and file changes remain after close. This has not received an independent security audit.
+
+See [the command matrix, native SSH and offline installation](docs/usage.html) and
 [test evidence and boundaries](docs/implementation.html).
 
 Development checks:
 
 ```sh
 python -m pip install -e . -r requirements-dev.txt
+npm ci
 python -m ruff check .
 python -m ruff format --check .
 python -m mypy
+python -m mypy --platform linux
 python -m build
 python -m unittest discover -s tests -v
 python tools/audit_runtime.py
 ```
+
+Node and Textual are test dependencies only. The terminal tests use xterm's
+parser to check cursor replies, a full-screen editor, Unicode paste and resizing.

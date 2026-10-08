@@ -3,6 +3,7 @@
 import asyncio
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,6 +70,45 @@ class Native(unittest.IsolatedAsyncioTestCase):
                         out, err = await process.communicate()
                     self.assertEqual((out, process.returncode), (b"native", 7))
                     self.assertTrue(err.endswith(b"err"), err)
+                    from test_terminal import Output
+
+                    # Force a real SSH PTY even though this test drives stdin
+                    # from a pipe. The native client remains an independent peer.
+                    python = (
+                        f"& '{sys.executable}' -i -q; exit $LASTEXITCODE"
+                        if os.name == "nt"
+                        else f"exec '{sys.executable}' -i -q"
+                    )
+                    process = await asyncio.create_subprocess_exec(
+                        shutil.which("ssh"),
+                        "-tt",
+                        "-F",
+                        str(root / "native/config"),
+                        "snakehole-" + ticket.info.session_id,
+                        python,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=dict(environment, TERM="xterm-256color"),
+                    )
+                    try:
+                        output = Output(process.stdout)
+                        await output.until(b">>> ")
+                        process.stdin.write(
+                            b"print('NATIVE'+str(6*7), __import__('sys').stdin.isatty())\r"
+                        )
+                        await process.stdin.drain()
+                        await output.until(b"NATIVE42 True")
+                        await output.until(b">>> ")
+                        process.stdin.write(b"exit()\r")
+                        await process.stdin.drain()
+                        async with asyncio.timeout(20):
+                            await process.communicate()
+                        self.assertEqual(process.returncode, 0)
+                    finally:
+                        if process.returncode is None:
+                            process.kill()
+                        await process.communicate()
                     if shutil.which("sftp"):
                         source = root / "source bytes"
                         target = root / "remote bytes"

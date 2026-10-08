@@ -20,12 +20,17 @@ from .errors import (
     PairingExpired,
     ProtocolViolation,
     SessionExpired,
-    UnsupportedOperation,
 )
 from .idle import Idle
 from .pairing import MAILBOX, Pairing
 from .platform import check_privilege, check_runtime, process_user
-from .process import ServerChannel, parse_argv, serve_command, shell_command
+from .process import (
+    ServerChannel,
+    login_shell,
+    parse_argv,
+    serve_command,
+    shell_command,
+)
 from .sftp import SFTPServer
 from .ssh import SSHConnection, key_blob, key_public
 from .ticket import SCHEMA, HostInfo, digest, strict, timestamp
@@ -278,6 +283,15 @@ class Host:
 
     async def _operation(self, process: asyncssh.SSHServerProcess[bytes]) -> None:
         command: str | list[str]
+        terminal: dict[str, Any] | None = (
+            dict(
+                term=process.term_type or "vt100",
+                size=process.term_size[:2],
+                modes=dict(process.term_modes),
+            )
+            if process.term_type is not None
+            else None
+        )
         if process.subsystem == "snakehole-keepalive":
             async with asyncio.timeout(10):
                 identifier = await process.stdin.read(64)
@@ -307,10 +321,14 @@ class Host:
                 payload = await process.stdin.readexactly(count)
             command, shell = parse_argv(payload), False
         elif process.command is not None:
-            command, shell = shell_command(process.command)
+            command, shell = shell_command(
+                process.command, terminal=terminal is not None
+            )
         else:
-            raise UnsupportedOperation("Use command execution")
-        await serve_command(ServerChannel(process), command, shell, cwd=self.cwd)
+            command, shell = login_shell(), False
+        await serve_command(
+            ServerChannel(process), command, shell, cwd=self.cwd, terminal=terminal
+        )
 
     def _close_request(self, session_id: str) -> bool:
         if session_id != self.info.session_id or self.closing:

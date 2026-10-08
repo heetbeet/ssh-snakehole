@@ -1,11 +1,13 @@
-"""Small asyncio adapter for the source-only wsproto protocol engine."""
+"""Asyncio streams for wsproto, with verified TLS on secure relay URLs."""
 
 import asyncio
 import contextlib
+import os
 import ssl
 from collections import deque
 from urllib.parse import urlsplit
 
+import certifi
 from wsproto import ConnectionType, WSConnection
 from wsproto.events import (
     AcceptConnection,
@@ -43,7 +45,14 @@ class WebSocket:
             or parsed.fragment
         ):
             raise ValueError("Expected a ws:// or wss:// relay URL")
-        tls = ssl.create_default_context() if parsed.scheme == "wss" else None
+        tls = None
+        if parsed.scheme == "wss":
+            # Python's Windows CA import can select an expired store certificate.
+            # Use Mozilla's roots, or an explicitly configured private CA bundle.
+            tls = ssl.create_default_context(
+                cafile=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+                capath=os.environ.get("SSL_CERT_DIR") or None,
+            )
         reader, writer = await asyncio.open_connection(
             parsed.hostname, parsed.port or (443 if tls else 80), ssl=tls, limit=65536
         )

@@ -3,3 +3,4 @@ build==1.6.1
 ruff==0.16.10
 mypy==2.4.0
 magic-wormhole==0.24.0
+textual==8.2.8
