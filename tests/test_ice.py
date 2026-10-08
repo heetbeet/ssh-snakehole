@@ -339,6 +339,37 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def test_failed_transit_connection_closes_pregathered_udp_sockets(self):
+        loop = asyncio.get_running_loop()
+        original = loop.create_datagram_endpoint
+        bound = asyncio.Event()
+        sockets = []
+
+        async def endpoint(*args, **kwargs):
+            result = await original(*args, **kwargs)
+            sockets.append(result[0].get_extra_info("socket"))
+            bound.set()
+            return result
+
+        async def refused(*args, **kwargs):
+            await bound.wait()
+            raise OSError("Transit unavailable")
+
+        with (
+            patch.object(loop, "create_datagram_endpoint", endpoint),
+            patch("asyncio.open_connection", refused),
+        ):
+            async with asyncio.timeout(3):
+                with self.assertRaisesRegex(OSError, "Transit unavailable"):
+                    await dial(
+                        secrets.token_bytes(32),
+                        secrets.token_hex(8),
+                        relay=self.url,
+                        stun=None,
+                    )
+            self.assertTrue(sockets)
+            self.assertTrue(all(sock.fileno() == -1 for sock in sockets))
+
     async def test_queued_datagrams_close_without_leaking_sockets(self):
         loop = asyncio.get_running_loop()
         endpoint = loop.create_datagram_endpoint
