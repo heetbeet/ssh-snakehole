@@ -19,6 +19,8 @@ This requires Git. Alternatively, from a downloaded or cloned checkout:
 python -m pip install .
 ```
 
+The current 0.2.1 interface is below. The proposed replacement is described afterward.
+
 On the computer being assisted:
 
 ```sh
@@ -43,6 +45,7 @@ The importable API keeps credentials in memory and needs no vault passphrase:
 
 ```python
 import asyncio
+from getpass import getpass
 from ssh_snakehole import connect
 
 
@@ -54,7 +57,7 @@ async def assist(code):
         await session.close_host()
 
 
-asyncio.run(assist(input("Code: ")))
+asyncio.run(assist(getpass("Code: ")))
 ```
 
 `run_argv()` executes an argument list without shell parsing. `put()` and `get()`
@@ -69,6 +72,38 @@ security audited. Native macOS and protected admin operation still need validati
 
 See [the command matrix and offline installation](docs/usage.html) or
 [test evidence and limits](docs/implementation.html).
+
+## Proposed connection flow
+
+This is not implemented yet. `connect` will ask for the host's code through hidden
+input and keep a foreground connection open for commands. No additional passphrase
+will be required. The connection message will read:
+
+```text
+Connected to HOST as USER.
+Reconnection token: snake1_<token>
+Keep this private if you want to reconnect later. It unlocks the saved credentials here.
+Access expires after 30 minutes without a completed operation or an explicit keepalive.
+Type close to revoke access for everyone on this session; exit disconnects this client.
+```
+
+Immediate work uses credentials in memory. An independently generated 256-bit token
+will protect the saved credentials for follow-up commands. Neither the token nor
+the original pairing code will be saved. Tokens will be supplied through hidden
+input or a trusted stdin pipe, rather than command-line arguments or the clipboard.
+
+Agents can already keep the Python `Session` above open, send commands and receive
+results without an interactive prompt or saved credentials. `session.exec()` also
+provides byte streams for sending input and reading output. The proposed CLI will
+support token-based reconnection for separate processes. Agents must select their
+session explicitly when using separate CLI commands.
+
+The proposed inactivity policy counts authenticated operation completion, including
+nonzero command exits. Long-running operations will send application heartbeats
+while their controller is alive; an idle prompt or automatic SSH transport
+keepalives will not renew access. Explicit application keepalives will support
+longer gaps between commands, within the host's absolute lifetime limit. Host
+expiry revokes access for all connections to that session.
 
 Development checks:
 
