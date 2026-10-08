@@ -152,6 +152,7 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                     await original(protocol, data, address)
 
         with patch.object(StunProtocol, "send_data", impaired):
+            task = None
             try:
                 a, b = await self.pair()
                 data = os.urandom(1024 * 1024)
@@ -163,7 +164,9 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                     a.write_eof()
 
                 task = asyncio.create_task(produce())
-                async with asyncio.timeout(30):
+                # Retransmission backoff under combined loss/reordering is not
+                # a throughput guarantee. Give the independent SCTP stack time.
+                async with asyncio.timeout(90):
                     received = await b.read()
                     await task
                 self.assertEqual(
@@ -171,6 +174,9 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertGreater(count, 100)
             finally:
+                if task is not None:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
                 await asyncio.gather(*delayed, return_exceptions=True)
 
     async def test_reliable_stream_fits_low_mtu_paths(self):
@@ -356,7 +362,6 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                     "none",
                     "connect",
                     host.code,
-                    "--detach",
                 ]
             )
             output = io.StringIO()
@@ -370,10 +375,15 @@ class ICE(unittest.IsolatedAsyncioTestCase):
                         side_effect=OSError("Blocked relay"),
                     ),
                     contextlib.redirect_stdout(output),
+                    patch("ssh_snakehole.cli.require_console"),
                 ):
                     with self.assertRaises(RelayUnavailable):
                         await run(args)
-                token = output.getvalue().strip()
+                token = (
+                    output.getvalue()
+                    .splitlines()[0]
+                    .removeprefix("Reconnection token: ")
+                )
                 ticket = await vault.load(token, root=directory)
                 self.assertTrue(host.accepted)
                 self.assertIsNone(args.code)

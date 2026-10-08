@@ -105,11 +105,13 @@ class ServerProcess(asyncssh.SSHServerProcess):
         super().connection_made(channel)
         self.owner.task(self.owner.watch(self))
 
-    def shell_requested(self):
-        return False
-
-    def pty_requested(self, *args):
-        return False
+    def pty_requested(self, term_type, term_size, term_modes):
+        return (
+            len(term_type) <= 128
+            and all(32 < ord(char) < 127 for char in term_type)
+            and all(0 <= value <= 1000 for value in term_size[:2])
+            and super().pty_requested(term_type, term_size, term_modes)
+        )
 
     def exec_requested(self, command):
         return (
@@ -208,6 +210,7 @@ class SSHConnection:
         except asyncio.CancelledError:
             raise
         except Exception:
+            logging.getLogger(__name__).debug("Remote operation failed", exc_info=True)
             with contextlib.suppress(OSError, asyncssh.Error):
                 process.stderr.write(b"ssh-snakehole: remote operation failed\n")
                 process.exit(126)
@@ -242,6 +245,7 @@ class SSHConnection:
                         kbdint_auth=False,
                         agent_forwarding=False,
                         x11_forwarding=False,
+                        line_editor=False,
                         login_timeout=10,
                         **common,
                     )

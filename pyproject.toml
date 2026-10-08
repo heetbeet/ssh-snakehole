@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssh-snakehole"
-version = "0.4.0"
+version = "0.5.0"
 description = "Temporary, code-paired SSH as a Python library"
 requires-python = ">=3.11,<3.15"
 dependencies = [
@@ -20,6 +20,8 @@ dependencies = [
     "spake2==0.9",
     "wsproto==1.3.2",
     "h11==0.16.0",
+    "pywinpty==3.0.5; sys_platform == 'win32'",
+    "ptyprocess==0.7.0; sys_platform != 'win32'",
 ]
 license = "MIT"
 readme = "README.md"
@@ -46,7 +48,7 @@ warn_redundant_casts = true
 no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-module = ["spake2", "spake2.*"]
+module = ["spake2", "spake2.*", "winpty", "ptyprocess"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

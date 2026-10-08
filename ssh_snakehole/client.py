@@ -117,6 +117,11 @@ class RemoteProcess:
     async def close_stdin(self) -> None:
         self.process.stdin.write_eof()
 
+    def resize(self, columns: int, rows: int) -> None:
+        if any(type(n) is not int or not 1 <= n <= 1000 for n in (columns, rows)):
+            raise ValueError("Terminal dimensions must be between 1 and 1000")
+        self.process.change_terminal_size(columns, rows)
+
     async def wait(self) -> CommandExit:
         await self.process.wait_closed()
         signal = self.process.exit_signal
@@ -165,7 +170,11 @@ class Session:
 
     @contextlib.asynccontextmanager
     async def _process(
-        self, command: str | list[str], argv: bool = False
+        self,
+        command: str | list[str] | None,
+        argv: bool = False,
+        *,
+        terminal: tuple[str, tuple[int, int]] | None = None,
     ) -> AsyncIterator[RemoteProcess]:
         self.ticket.check_live()
         process = None
@@ -187,13 +196,21 @@ class Session:
                 await process.stdin.drain()
             else:
                 if (
-                    not isinstance(command, str)
-                    or "\0" in command
-                    or len(command.encode()) > 65536
-                ):
+                    command is not None
+                    and (
+                        not isinstance(command, str)
+                        or "\0" in command
+                        or len(command.encode()) > 65536
+                    )
+                ) or (command is None and terminal is None):
                     raise ValueError("Invalid command text")
+                assert command is None or isinstance(command, str)
                 process = await self._native.create_process(
-                    command, encoding=None, request_pty=False
+                    command,
+                    encoding=None,
+                    request_pty=terminal is not None,
+                    term_type=terminal[0] if terminal else None,
+                    term_size=terminal[1] if terminal else (),
                 )
             yield RemoteProcess(process)
         except asyncssh.Error as exc:
@@ -217,6 +234,26 @@ class Session:
                     yield process
         except TimeoutError as exc:
             raise CommandTimedOut() from exc
+
+    @contextlib.asynccontextmanager
+    async def terminal(
+        self,
+        command: str | None = None,
+        *,
+        term_type: str = "xterm-256color",
+        size: tuple[int, int] = (80, 24),
+    ) -> AsyncIterator[RemoteProcess]:
+        """Open a native remote shell, or run a command with a real SSH PTY."""
+        if (
+            not 0 < len(term_type) <= 128
+            or any(not 32 < ord(char) < 127 for char in term_type)
+            or len(size) != 2
+            or any(type(n) is not int or not 1 <= n <= 1000 for n in size)
+        ):
+            raise ValueError("Invalid terminal type or dimensions")
+        async with self._deadline(None):
+            async with self._process(command, terminal=(term_type, size)) as process:
+                yield process
 
     async def _run(
         self,

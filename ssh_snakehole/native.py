@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .aio import close_stream
+from .console import chunks
 from .platform import private_file
 from .ssh import private_key
 from .ticket import validate_offer
@@ -36,7 +37,7 @@ def export(ticket, directory, token):
         else lambda value: shlex.quote(str(value))
     )
     proxy = f"{quote(sys.executable)} -m ssh_snakehole proxy {quote(route_path)}"
-    text = f'Host {identifier}\n    HostName {identifier}\n    User help\n    IdentityFile "{(root / "key").as_posix()}"\n    UserKnownHostsFile "{(root / "known_hosts").as_posix()}"\n    StrictHostKeyChecking yes\n    IdentitiesOnly yes\n    ProxyCommand {proxy}\n    RequestTTY no\n'
+    text = f'Host {identifier}\n    HostName {identifier}\n    User help\n    IdentityFile "{(root / "key").as_posix()}"\n    UserKnownHostsFile "{(root / "known_hosts").as_posix()}"\n    StrictHostKeyChecking yes\n    IdentitiesOnly yes\n    ProxyCommand {proxy}\n    RequestTTY auto\n'
     root.mkdir(parents=True, exist_ok=False, mode=0o700)
     created = []
     try:
@@ -70,7 +71,7 @@ def export(ticket, directory, token):
             path.unlink(missing_ok=True)
         root.rmdir()
         raise
-    return f'ssh -F "{path}" {identifier} "COMMAND"; delete {root} after use'
+    return f'ssh -F "{path}" {identifier}; delete {root} after use'
 
 
 async def proxy(route):
@@ -97,48 +98,9 @@ async def proxy(route):
         )
 
     async def upstream():
-        if sys.platform == "win32":
-            import ctypes as c
-            import msvcrt
-            from ctypes import wintypes as w
-
-            kernel = c.WinDLL("kernel32", use_last_error=True)
-            kernel.PeekNamedPipe.argtypes = [
-                w.HANDLE,
-                c.c_void_p,
-                w.DWORD,
-                c.c_void_p,
-                c.POINTER(w.DWORD),
-                c.c_void_p,
-            ]
-            handle = msvcrt.get_osfhandle(0)
-            while True:
-                available = w.DWORD()
-                if not kernel.PeekNamedPipe(
-                    handle, None, 0, None, c.byref(available), None
-                ):
-                    if c.get_last_error() == 109:
-                        break
-                    raise c.WinError(c.get_last_error())
-                if not available.value:
-                    await asyncio.sleep(0.01)
-                    continue
-                data = os.read(0, min(available.value, 32768))
-                if not data:
-                    break
-                writer.write(data)
-                await writer.drain()
-        else:
-            pipe = asyncio.StreamReader(limit=65536)
-            transport, _ = await asyncio.get_running_loop().connect_read_pipe(
-                lambda: asyncio.StreamReaderProtocol(pipe), sys.stdin.buffer
-            )
-            try:
-                while data := await pipe.read(32768):
-                    writer.write(data)
-                    await writer.drain()
-            finally:
-                transport.close()
+        async for data in chunks():
+            writer.write(data)
+            await writer.drain()
         with contextlib.suppress(Exception):
             writer.write_eof()
 

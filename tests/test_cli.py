@@ -46,7 +46,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 f"tcp://127.0.0.1:{relay.transit_port}",
             ]
 
-            async def invoke(*args, secret, expected_status=0):
+            async def invoke(*args, secret="", stdin=None, expected_status=0):
                 process = await asyncio.create_subprocess_exec(
                     *command,
                     *args,
@@ -59,7 +59,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 try:
                     async with asyncio.timeout(40):
                         stdout, stderr = await process.communicate(
-                            (secret + "\n").encode()
+                            stdin if stdin is not None else (secret + "\n").encode()
                         )
                     self.assertEqual(
                         process.returncode,
@@ -87,7 +87,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             async with asyncio.timeout(10):
                 code = (await host.stdout.readline()).strip().decode("ascii")
             token = (
-                (await invoke("connect", "--code-stdin", "--detach", secret=code))
+                (await invoke("pair", "--code-stdin", secret=code))
                 .strip()
                 .decode("ascii")
             )
@@ -120,6 +120,28 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await invoke("exec", "--token-stdin", shell, secret=token)).strip(),
                 b"cli-ok",
+            )
+            code_script = "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())"
+            import shlex
+
+            binary_command = (
+                f"& '{sys.executable}' -c '{code_script}'"
+                if os.name == "nt"
+                else shlex.join([sys.executable, "-c", code_script])
+            )
+            payload = bytes(range(256)) * 256
+            self.assertEqual(
+                await invoke("exec", "--token", token, binary_command, stdin=payload),
+                payload,
+            )
+            self.assertEqual(
+                await invoke(
+                    "exec",
+                    "--token-stdin",
+                    binary_command,
+                    stdin=(token + "\n").encode() + payload,
+                ),
+                payload,
             )
             source, target, downloaded = (
                 root / "source",
@@ -157,15 +179,11 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             )
             async with open_host(relay=config) as positional_host:
                 token = (
-                    (
-                        await invoke(
-                            "connect", positional_host.code, "--detach", secret=""
-                        )
-                    )
+                    (await invoke("pair", positional_host.code, secret=""))
                     .strip()
                     .decode("ascii")
                 )
-                await invoke("close", "--token-stdin", secret=token)
+                await invoke("close", "--token", token, secret="")
         finally:
             if renewal is not None and renewal.returncode is None:
                 renewal.kill()

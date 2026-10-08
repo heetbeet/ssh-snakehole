@@ -3,11 +3,12 @@
 import argparse
 import asyncio
 import math
+import os
 import sys
 
 from . import __version__, vault
 from .client import connect, pair
-from .console import lines, read_secret
+from .console import chunks, raw_terminal, read_secret
 from .errors import SnakeholeError
 from .host import RelayConfig, open_host
 
@@ -36,23 +37,17 @@ def parser():
         type=float,
         help="Optional hard lifetime in seconds, including active work",
     )
-    join = sub.add_parser(
-        "connect", help="Pair using hidden code input and open a command prompt"
-    )
-    join.add_argument(
-        "code",
-        nargs="?",
-        metavar="CODE",
-        help="Optional code; exposes it to shell history and process listings",
-    )
-    join.add_argument(
-        "--code-stdin", action="store_true", help="Read CODE from one stdin line"
-    )
-    join.add_argument(
-        "--detach",
-        action="store_true",
-        help="Print only the new token on stdout, then disconnect",
-    )
+    for action, help_text in (
+        ("connect", "Pair using CODE and open the remote shell"),
+        ("pair", "Exchange CODE for a reconnection token; print only the token"),
+    ):
+        join = sub.add_parser(action, help=help_text)
+        join.add_argument(
+            "code", nargs="?", metavar="CODE", help="One-use invitation code"
+        )
+        join.add_argument(
+            "--code-stdin", action="store_true", help="Read CODE from one stdin line"
+        )
     for action in (
         "resume",
         "exec",
@@ -65,7 +60,11 @@ def parser():
         "export-ssh",
     ):
         item = sub.add_parser(action)
-        item.add_argument(
+        credentials = item.add_mutually_exclusive_group()
+        credentials.add_argument(
+            "--token", metavar="TOKEN", help="Local reconnection token"
+        )
+        credentials.add_argument(
             "--token-stdin",
             action="store_true",
             help="Read the reconnection token from one stdin line",
@@ -107,7 +106,7 @@ def config(args):
 def require_console():
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError(
-            "Interactive mode requires a terminal; agents can use connect --code-stdin --detach or the Python API"
+            "Interactive mode requires a terminal; agents can use pair CODE, then exec --token TOKEN, or the Python API"
         )
 
 
@@ -118,7 +117,12 @@ def output(data, stream):
 
 async def execute(session, command, timeout=None):
     async with session.exec(command, timeout=timeout) as process:
-        await process.close_stdin()
+
+        async def feed():
+            if not sys.stdin.isatty():
+                async for data in chunks():
+                    await process.send(data)
+            await process.close_stdin()
 
         async def copy(reader, stream):
             while data := await reader.read(32768):
@@ -128,58 +132,72 @@ async def execute(session, command, timeout=None):
             asyncio.create_task(copy(process.stdout, sys.stdout)),
             asyncio.create_task(copy(process.stderr, sys.stderr)),
         ]
+        feeding = asyncio.create_task(feed())
+        waiting = asyncio.create_task(process.wait())
         try:
+            pending = {feeding, waiting, *tasks}
+            while not waiting.done():
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    await task
             await asyncio.gather(*tasks)
-            result = await process.wait()
+            result = waiting.result()
             return result.exit_code if result.exit_code is not None else 128
         finally:
-            for task in tasks:
+            for task in (*tasks, feeding, waiting):
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, feeding, waiting, return_exceptions=True)
 
 
 async def interactive(session):
-    source = lines()
-    disconnected = asyncio.create_task(session.connection.wait_closed())
-    pending = None
-    try:
-        while True:
-            print("snakehole> ", end="", flush=True)
-            pending = asyncio.create_task(anext(source))
-            done, _ = await asyncio.wait(
-                (pending, disconnected), return_when=asyncio.FIRST_COMPLETED
-            )
-            if disconnected in done:
-                print(
-                    "\nConnection ended. Use your reconnection token if access is still open."
-                )
-                return False
+    size = os.get_terminal_size(sys.stdout.fileno())
+    term_type = os.environ.get("TERM") or "xterm-256color"
+    async with session.terminal(term_type=term_type, size=tuple(size)) as process:
+
+        async def feed():
+            async for data in chunks():
+                await process.send(data)
+            await process.close_stdin()
+
+        async def copy(reader, stream):
+            while data := await reader.read(32768):
+                output(data, stream)
+
+        async def resize():
+            previous = size
+            while True:
+                await asyncio.sleep(0.1)
+                current = os.get_terminal_size(sys.stdout.fileno())
+                if current != previous:
+                    process.resize(*current)
+                    previous = current
+
+        with raw_terminal():
+            tasks = [
+                asyncio.create_task(feed()),
+                asyncio.create_task(copy(process.stdout, sys.stdout)),
+                asyncio.create_task(copy(process.stderr, sys.stderr)),
+                asyncio.create_task(resize()),
+            ]
+            waiting = asyncio.create_task(process.wait())
             try:
-                command = pending.result().strip()
-            except StopAsyncIteration:
-                return False
-            if command == "exit":
-                return False
-            if command == "close":
-                await session.close_host()
-                print("Access closed.")
-                return True
-            if command == "keepalive":
-                await session.keepalive()
-                print("Access renewed.")
-            elif command:
-                status = await execute(session, command)
-                if status:
-                    print(f"Exit status {status}.", file=sys.stderr)
-    finally:
-        if pending is not None:
-            pending.cancel()
-        disconnected.cancel()
-        await asyncio.gather(
-            *(task for task in (pending, disconnected) if task is not None),
-            return_exceptions=True,
-        )
-        await source.aclose()
+                pending = {waiting, *tasks}
+                while not waiting.done():
+                    done, pending = await asyncio.wait(
+                        pending, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in done:
+                        await task
+                await asyncio.gather(*tasks[1:3])
+                result = waiting.result()
+                return result.exit_code if result.exit_code is not None else 128
+            finally:
+                waiting.cancel()
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, waiting, return_exceptions=True)
 
 
 async def run(args):
@@ -204,10 +222,10 @@ async def run(args):
 
         await proxy(args.route)
         return 0
-    if args.action == "connect":
+    if args.action in ("connect", "pair"):
         if args.code is not None and args.code_stdin:
             raise ValueError("Use either CODE or --code-stdin")
-        if not args.detach:
+        if args.action == "connect":
             require_console()
         code = (
             args.code
@@ -222,27 +240,30 @@ async def run(args):
         # Pairing consumes CODE. Preserve accepted credentials even if the first
         # network connection fails, so resume can recover without a new code.
         token = await vault.save(ticket)
-        if args.detach:
+        if args.action == "pair":
             print(token, flush=True)
-        else:
+            return 0
+        print(
+            f"Reconnection token: {token}\nResume later: python -m ssh_snakehole resume --token TOKEN\n",
+            flush=True,
+        )
+        async with connect(ticket, relay=config(args)) as session:
             print(
-                f"Reconnection token: {token}\nKeep this private if you want to reconnect later. It unlocks the saved credentials here.\nIf connection fails, use resume with this token.\n",
+                f"Connected to {session.info.host_name} as {session.info.process_user} ({session.transport}).\nExit the remote shell to disconnect. Use close --token TOKEN to revoke access.",
                 flush=True,
             )
-        async with connect(ticket, relay=config(args)) as session:
-            if not args.detach:
-                print(
-                    f"Connected to {session.info.host_name} as {session.info.process_user}.\nTransport: {session.transport}.\n\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
-                )
-                if await interactive(session):
-                    vault.resolve(token).unlink(missing_ok=True)
-        return 0
+            return await interactive(session)
     if args.action == "resume":
         require_console()
     if args.action == "keepalive" and args.interval is not None:
         if not math.isfinite(args.interval) or not 0 < args.interval < 1800:
             raise ValueError("Keepalive interval must be between 0 and 1800 seconds")
-    token = read_secret("Reconnection token: ", args.token_stdin, 50)
+    token = (
+        args.token
+        if args.token is not None
+        else read_secret("Reconnection token: ", args.token_stdin, 50)
+    )
+    args.token = None
     if args.action == "forget":
         vault.resolve(token).unlink()
         return 0
@@ -259,10 +280,10 @@ async def run(args):
     async with connect(ticket, relay=config(args)) as session:
         if args.action == "resume":
             print(
-                f"Connected to {session.info.host_name} as {session.info.process_user}.\nTransport: {session.transport}.\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
+                f"Connected to {session.info.host_name} as {session.info.process_user} ({session.transport}).",
+                flush=True,
             )
-            if await interactive(session):
-                vault.resolve(token).unlink(missing_ok=True)
+            return await interactive(session)
         elif args.action == "exec":
             return await execute(session, args.command, args.timeout)
         elif args.action in ("put", "get"):

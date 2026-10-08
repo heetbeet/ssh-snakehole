@@ -33,7 +33,29 @@ class ServerChannel:
             )
 
 
-def shell_command(command: str) -> tuple[str | list[str], bool]:
+def login_shell() -> list[str]:
+    if sys.platform == "win32":
+        return [
+            os.path.join(
+                os.environ["SystemRoot"],
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe",
+            ),
+            "-NoLogo",
+        ]
+    import pwd
+
+    shell = os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell
+    if not shell or shell.endswith(("/nologin", "/false")):
+        shell = "/bin/sh"
+    return [shell]
+
+
+def shell_command(
+    command: str, *, terminal: bool = False
+) -> tuple[str | list[str], bool]:
     if "\0" in command or len(command.encode("utf-8")) > 65536:
         raise UnsupportedOperation("Invalid command text")
     if sys.platform == "win32":
@@ -47,7 +69,7 @@ def shell_command(command: str) -> tuple[str | list[str], bool]:
             ),
             "-NoLogo",
             "-NoProfile",
-            "-NonInteractive",
+            *([] if terminal else ["-NonInteractive"]),
             "-Command",
             command,
         ], False
@@ -67,8 +89,16 @@ def parse_argv(payload: bytes) -> list[str]:
 
 
 async def serve_command(
-    channel: ServerChannel, command: str | list[str], shell: bool, *, cwd: str
+    channel: ServerChannel,
+    command: str | list[str],
+    shell: bool,
+    *,
+    cwd: str,
+    terminal: dict | None = None,
 ) -> None:
+    request = json_bytes({"command": command, "shell": shell, "terminal": terminal})
+    if len(request) > 65536:
+        raise UnsupportedOperation("Command request exceeds limit")
     job = create_job() if sys.platform == "win32" else None
     process = None
     tasks = []
@@ -109,14 +139,35 @@ async def serve_command(
         async with asyncio.timeout(10):
             if await stdout.readexactly(6) != b"READY\n":
                 raise UnsupportedOperation("Command containment failed")
-        request = json_bytes({"command": command, "shell": shell})
         stdin.write(uint(len(request)) + request)
         await stdin.drain()
 
         async def input_pipe():
             try:
-                while data := await channel.stdin.read(32768):
-                    stdin.write(data)
+                while True:
+                    try:
+                        data = await channel.stdin.read(32768)
+                        if not data:
+                            break
+                        frame = b"D" + data if terminal else data
+                    except asyncssh.TerminalSizeChanged as event:
+                        if not terminal or not all(
+                            1 <= n <= 1000 for n in event.term_size[:2]
+                        ):
+                            continue
+                        frame = b"R" + uint(event.width) + uint(event.height)
+                    except asyncssh.SignalReceived as event:
+                        if not terminal or event.signal not in (
+                            "INT",
+                            "QUIT",
+                            "TERM",
+                            "HUP",
+                            "KILL",
+                            "WINCH",
+                        ):
+                            continue
+                        frame = b"S" + event.signal.encode("ascii")
+                    stdin.write(uint(len(frame)) + frame if terminal else frame)
                     await stdin.drain()
             except (BrokenPipeError, ConnectionResetError):
                 pass
@@ -135,6 +186,9 @@ async def serve_command(
         # Pipe EOF can be held open by surviving children. Observe the worker's
         # exit first, then close its owned command tree before draining the pipes.
         while process.returncode is None:
+            for task in tasks:
+                if task.done() and not task.cancelled():
+                    task.result()
             await asyncio.sleep(0.01)
         status = process.returncode
         if job:
