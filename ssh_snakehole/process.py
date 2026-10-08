@@ -109,28 +109,43 @@ async def serve_command(
             read_fd, write_fd = os.pipe()
         root = str(Path(__file__).resolve().parent.parent)
         worker = "import sys;sys.path.insert(0,sys.argv.pop(1));from ssh_snakehole.worker import main;main()"
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            *(["-I"] if sys.flags.isolated else []),
-            "-c",
-            worker,
-            root,
-            job.name if job else "",
-            str(os.getpid()),
-            str(read_fd or 0),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=sys.platform != "win32",
-            limit=65536,
-            cwd=cwd,
-            pass_fds=(read_fd,) if read_fd is not None else (),
-            env={
-                key: value
-                for key, value in os.environ.items()
-                if not key.startswith("SSH_SNAKEHOLE_")
-            },
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                sys.executable,
+                *(["-I"] if sys.flags.isolated else []),
+                "-c",
+                worker,
+                root,
+                job.name if job else "",
+                str(os.getpid()),
+                str(read_fd or 0),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=sys.platform != "win32",
+                limit=65536,
+                cwd=cwd,
+                pass_fds=(read_fd,) if read_fd is not None else (),
+                env={
+                    key: value
+                    for key, value in os.environ.items()
+                    if not key.startswith("SSH_SNAKEHOLE_")
+                },
+            )
         )
+        try:
+            process = await asyncio.shield(spawning)
+        except asyncio.CancelledError:
+            # A cancelled spawn can leave a child and partially connected pipes.
+            # Obtain ownership first, then let the common cleanup stop it.
+            while True:
+                try:
+                    process = await asyncio.shield(spawning)
+                    break
+                except asyncio.CancelledError:
+                    if spawning.cancelled():
+                        raise
+            raise
         stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
         assert stdin is not None and stdout is not None and stderr is not None
         if read_fd is not None:

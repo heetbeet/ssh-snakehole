@@ -134,6 +134,7 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
                 import gc
                 import warnings
 
+                gc.collect()
                 with warnings.catch_warnings(record=True) as leaked:
                     warnings.simplefilter("always", ResourceWarning)
                     for _ in range(3):

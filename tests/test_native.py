@@ -98,7 +98,8 @@ class Native(unittest.IsolatedAsyncioTestCase):
                             b"print('NATIVE'+str(6*7), __import__('sys').stdin.isatty())\r"
                         )
                         await process.stdin.drain()
-                        self.assertIn(b"NATIVE42 True", await output.until(b">>> "))
+                        await output.until(b"NATIVE42 True")
+                        await output.until(b">>> ")
                         process.stdin.write(b"exit()\r")
                         await process.stdin.drain()
                         async with asyncio.timeout(20):
@@ -107,7 +108,7 @@ class Native(unittest.IsolatedAsyncioTestCase):
                     finally:
                         if process.returncode is None:
                             process.kill()
-                            await process.wait()
+                        await process.communicate()
                     if shutil.which("sftp"):
                         source = root / "source bytes"
                         target = root / "remote bytes"

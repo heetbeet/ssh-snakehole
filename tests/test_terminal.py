@@ -160,6 +160,61 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         await asyncio.sleep(10)
                 await asyncio.wait_for(host.wait_closed(), 3)
 
+    async def test_split_utf8_and_legacy_bytes(self):
+        import shlex
+
+        text = "é 汉 🐍 e\u0301"
+        script = "import sys; print('READY',flush=True); data=sys.stdin.buffer.readline().rstrip(b'\\r\\n'); print('GOT-'+data.hex(),flush=True)"
+        command = (
+            f"& '{sys.executable}' -c '{script.replace(chr(39), chr(39) * 2)}'"
+            if sys.platform == "win32"
+            else shlex.join([sys.executable, "-c", script])
+        )
+        async with open_host(relay=self.config) as host:
+            async with connect(host.code, relay=self.config) as session:
+                async with session.terminal(command) as process:
+                    out = Output(process.stdout)
+                    await out.until(b"READY")
+                    for byte in text.encode("utf-8") + b"\r":
+                        await process.send(bytes([byte]))
+                        await asyncio.sleep(0.01)
+                    await out.until(("GOT-" + text.encode().hex()).encode())
+                    await process.stdout.read()
+                    self.assertEqual((await process.wait()).exit_code, 0)
+                # Exec is binary on every platform; encoding belongs to callers.
+                data = b"latin1:\xe9 utf8:\xc3\xa9\0\xff"
+                result = await session.run_argv(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())",
+                    ],
+                    stdin=data,
+                )
+                self.assertEqual(result.stdout, data)
+                if sys.platform != "win32":
+                    script = "import os,tty; tty.setraw(0); os.write(1,b'READY'); os.write(1,os.read(0,1))"
+                    async with session.terminal(
+                        shlex.join([sys.executable, "-c", script])
+                    ) as process:
+                        out = Output(process.stdout)
+                        await out.until(b"READY")
+                        await process.send(b"\xe9")
+                        self.assertEqual(await process.stdout.read(), b"\xe9")
+                        self.assertEqual((await process.wait()).exit_code, 0)
+                else:
+                    async with session.terminal(
+                        f"& '{sys.executable}' -i -q"
+                    ) as process:
+                        out = Output(process.stdout)
+                        await out.until(b">>> ")
+                        await process.send(b"\xff")
+                        stderr = await process.stderr.read()
+                        await process.stdout.read()
+                        self.assertNotEqual((await process.wait()).exit_code, 0)
+                        self.assertIn(b"Windows terminal input requires UTF-8", stderr)
+                await session.close_host()
+
     async def test_python_repl_resize_unicode_colors_and_ctrl_c(self):
         command = (
             f"& '{sys.executable}' -i -q; exit $LASTEXITCODE"
@@ -183,9 +238,11 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     await process.send(
                         b"import os,sys; x=41; print('TTY'+str(sys.stdin.isatty()))\r"
                     )
-                    self.assertIn(b"TTYTrue", await out.until(b">>> "))
+                    await out.until(b"TTYTrue")
+                    await out.until(b">>> ")
                     await process.send(b"print('VALUE'+str(x+1))\r")
-                    self.assertIn(b"VALUE42", await out.until(b">>> "))
+                    await out.until(b"VALUE42")
+                    await out.until(b">>> ")
                     process.resize(104, 37)
                     await process.send(
                         b"print('SIZE'+str(tuple(os.get_terminal_size())))\r"
@@ -195,7 +252,8 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     await process.send(
                         b"print(chr(27)+'[31m'+chr(233)+chr(27)+'[0m')\r"
                     )
-                    self.assertIn("é".encode(), await out.until(b">>> "))
+                    await out.until("é".encode())
+                    await out.until(b">>> ")
                     self.assertRegex(bytes(out.all), rb"\x1b\[[0-9;]*31m")
                     await process.send(b"import time; time.sleep(60)\r")
                     await asyncio.sleep(1.8)
@@ -369,8 +427,10 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                             "k.GetConsoleMode(h,ctypes.byref(m)); assert m.value==old; "
                         )
                     else:
-                        wrapper += "import termios; old=termios.tcgetattr(0); "
-                        check = "assert termios.tcgetattr(0)==old, (old,termios.tcgetattr(0)); "
+                        wrapper += "import termios,os; old=termios.tcgetattr(0); blocking=os.get_blocking(0); "
+                        # macOS sets PENDIN as input arrives. It is kernel state,
+                        # not a terminal mode which a client can restore.
+                        check = "new=termios.tcgetattr(0); old[3]&=~getattr(termios,'PENDIN',0); new[3]&=~getattr(termios,'PENDIN',0); assert new==old, (old,new); assert os.get_blocking(0)==blocking; "
                     arguments = argv[4:] + (
                         ["connect", credential]
                         if action == "connect"
@@ -407,10 +467,12 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         )
                         await out.until(b">>> ")
                         await tty.send(b"print('CLI'+str(6*7))\r")
-                        self.assertIn(b"CLI42", await out.until(b">>> "))
+                        await out.until(b"CLI42")
+                        await out.until(b">>> ")
                         # Left arrow and backspace must reach Python's line editor.
                         await tty.send(b"print('EDIT'+str(6*8))\x1b[D\x1b[D\x7f7\r")
-                        self.assertIn(b"EDIT42", await out.until(b">>> "))
+                        await out.until(b"EDIT42")
+                        await out.until(b">>> ")
                         tty.resize(104, 37)
                         await asyncio.sleep(0.3)
                         await tty.send(

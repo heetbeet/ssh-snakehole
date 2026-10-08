@@ -83,8 +83,10 @@ def serve(request, descriptor):
         os.close(descriptor)
         os.set_blocking(pty.fd, False)
 
+    failures = []
+
     def feed():
-        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        decoder = codecs.getincrementaldecoder("utf-8")()
         try:
             while True:
                 count = struct.unpack(">I", exact(4))[0]
@@ -130,14 +132,26 @@ def serve(request, descriptor):
                     raise ValueError("Invalid terminal input")
         except (EOFError, OSError):
             # SSH EOF is input EOF, not a request to stop the output stream.
+            if sys.platform == "win32":
+                try:
+                    decoder.decode(b"", final=True)
+                except UnicodeError:
+                    failures.append("Windows terminal input requires complete UTF-8")
+                    return
             with contextlib.suppress(Exception):
                 pty.write("\x04" if sys.platform == "win32" else b"\x04")
+        except UnicodeError:
+            failures.append("Windows terminal input requires UTF-8")
+        except (ValueError, struct.error):
+            failures.append("Invalid terminal input")
 
     # This thread exists only inside the owned worker, which dies with the channel.
     threading.Thread(target=feed, daemon=True).start()
     exited = None
     try:
         while True:
+            if failures:
+                raise OSError(failures[0])
             try:
                 data = pty.read() if sys.platform == "win32" else os.read(pty.fd, 32768)
             except BlockingIOError:

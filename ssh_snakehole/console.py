@@ -128,7 +128,9 @@ async def chunks():
         reader = asyncio.StreamReader(limit=65536)
         # asyncio owns and closes its pipe. Give it a duplicate so it cannot
         # close the caller's stdin before raw terminal settings are restored.
-        with os.fdopen(os.dup(sys.stdin.fileno()), "rb", buffering=0) as pipe:
+        descriptor = sys.stdin.fileno()
+        was_blocking = os.get_blocking(descriptor)
+        with os.fdopen(os.dup(descriptor), "rb", buffering=0) as pipe:
             transport, _ = await asyncio.get_running_loop().connect_read_pipe(
                 lambda: asyncio.StreamReaderProtocol(reader), pipe
             )
@@ -137,3 +139,5 @@ async def chunks():
                     yield data
             finally:
                 transport.close()
+                # Duplicates share the file description and its blocking flag.
+                os.set_blocking(descriptor, was_blocking)
