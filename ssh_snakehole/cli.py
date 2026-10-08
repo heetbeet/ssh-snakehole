@@ -39,6 +39,12 @@ def parser():
         "connect", help="Pair using hidden code input and open a command prompt"
     )
     join.add_argument(
+        "code",
+        nargs="?",
+        metavar="CODE",
+        help="Optional code; exposes it to shell history and process listings",
+    )
+    join.add_argument(
         "--code-stdin", action="store_true", help="Read CODE from one stdin line"
     )
     join.add_argument(
@@ -196,9 +202,16 @@ async def run(args):
         await proxy(args.route)
         return 0
     if args.action == "connect":
+        if args.code is not None and args.code_stdin:
+            raise ValueError("Use either CODE or --code-stdin")
         if not args.detach:
             require_console()
-        code = read_secret("Code: ", args.code_stdin)
+        code = (
+            args.code
+            if args.code is not None
+            else read_secret("Code: ", args.code_stdin)
+        )
+        args.code = None
         try:
             ticket = await pair(code, relay=config(args))
         finally:
