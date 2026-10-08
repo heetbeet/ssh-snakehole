@@ -130,6 +130,28 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
                         )
                     await asyncio.sleep(1.2)
                     self.assertFalse(marker.exists())
+                # Exercise cancellation before the worker acknowledges startup.
+                import gc
+                import warnings
+
+                with warnings.catch_warnings(record=True) as leaked:
+                    warnings.simplefilter("always", ResourceWarning)
+                    for _ in range(3):
+                        with self.assertRaises(CommandTimedOut):
+                            await session.run_argv(
+                                [sys.executable, "-c", "import time;time.sleep(10)"],
+                                timeout=0.02,
+                            )
+                    await asyncio.sleep(0.2)
+                    gc.collect()
+                self.assertFalse(
+                    [
+                        str(w.message)
+                        for w in leaked
+                        if issubclass(w.category, ResourceWarning)
+                    ],
+                    leaked,
+                )
                 self.assertEqual(
                     (
                         await session.run_argv(

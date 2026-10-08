@@ -205,25 +205,48 @@ async def serve_command(
                 os.close(descriptor)
         if job:
             job.close()
-        elif process and sys.platform != "win32":
+        if process:
+            # Cancellation can precede the input pump (even the READY packet).
+            # Close this pipe explicitly so asyncio can finish its transport.
+            if process.stdin:
+                process.stdin.close()
             # The acknowledged pipe watcher owns group termination. After it
             # exits, the numeric group ID may be retired or reused. Never signal
             # that group from the parent; kill only our still-running worker.
             with contextlib.suppress(ProcessLookupError):
                 if process.returncode is None:
                     process.kill()
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        if process:
-            with contextlib.suppress(TimeoutError):
 
-                async def drain(pipe):
-                    while await pipe.read(32768):
-                        pass
+        async def finish():
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if process:
+                with contextlib.suppress(TimeoutError):
 
-                async with asyncio.timeout(5):
-                    await asyncio.gather(
-                        process.wait(), drain(process.stdout), drain(process.stderr)
-                    )
+                    async def drain(pipe):
+                        while await pipe.read(32768):
+                            pass
+
+                    async with asyncio.timeout(5):
+                        await asyncio.gather(
+                            process.wait(), drain(process.stdout), drain(process.stderr)
+                        )
+
+        # Channel close and connection close can cancel the same handler twice.
+        # Finish draining owned pipes even when that second cancellation arrives.
+        cleanup = asyncio.create_task(finish())
+        cancelled = False
+        try:
+            while True:
+                try:
+                    await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+                    if cleanup.cancelled():
+                        raise
+        finally:
+            if cancelled:
+                raise asyncio.CancelledError
