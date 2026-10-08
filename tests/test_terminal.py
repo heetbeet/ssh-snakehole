@@ -190,7 +190,10 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     # Startup must not impose ConPTY's 3s capability timeout.
                     async with asyncio.timeout(2.5):
                         data = await process.stdout.read()
-                    self.assertNotIn(b"\x1b[c", data)
+                    # The worker handles only ConPTY startup. A later query
+                    # written by the application must still reach the client.
+                    self.assertEqual(data.count(b"\x1b[c"), 1)
+                    self.assertIn(b"APP-QUERY:\x1b[c", data)
                     self.assertTrue(data.startswith(b"\x1b[2J\x1b[H"))
                     plain = ANSI.sub(b"", data)
                     self.assertIn(b"BURST-BEGIN", plain)
