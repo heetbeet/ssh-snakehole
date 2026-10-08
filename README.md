@@ -4,14 +4,20 @@ Temporary SSH access for Python programs and agents. Run a host, share its code,
 execute commands or transfer files, then close access. Both computers connect
 outward through Magic Wormhole relays. No port forwarding is needed.
 
-Requires CPython 3.11-3.14. Install from GitHub in your usual Python environment:
+This is a work in progress. We will release on public PyPI once the edge cases
+are resolved and we are happy with the library.
+
+Requires CPython 3.11-3.14. For now, install from GitHub:
 
 ```sh
-python -m pip install https://github.com/heetbeet/ssh-snakehole/archive/refs/heads/master.zip
+python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git
 ```
 
-This downloads the current source and installs its dependencies. Git is not required.
-The package is not published on public PyPI.
+This requires Git. Alternatively, from a downloaded or cloned checkout:
+
+```sh
+python -m pip install .
+```
 
 On the computer being assisted:
 

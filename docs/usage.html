@@ -1,10 +1,12 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open access, share a code, finish, close</title><link rel="stylesheet" href="style.css"></head><body>
 <header><a href="index.html">ssh-snakehole</a><span class="meta"> / 0.2.1 / 7 October 2026</span></header><main><h1>Open access, share a code, finish, close</h1>
-<p>Use CPython 3.11-3.14 in an ordinary Python environment. Install the current source from the public GitHub repository. Git is not required:</p>
-<pre>python -m pip install https://github.com/heetbeet/ssh-snakehole/archive/refs/heads/master.zip</pre>
-<p>The package is not published on public PyPI. Version 0.2.1 also remains available through the <a href="https://pypi.autoactuary.com/simple/ssh-snakehole/">private Auto Actuary index</a>, which requires an account.</p>
-<p>For development, install this checkout with <code>python -m pip install .</code>. A venv is optional and managed with Python's standard tools. Installation creates no service or PATH changes.</p>
+<p>This is a work in progress. Public PyPI releases will wait until the edge cases are resolved and we are happy with the library.</p>
+<p>Use CPython 3.11-3.14 in an ordinary Python environment. For now, install from the public GitHub repository. This requires Git:</p>
+<pre>python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git</pre>
+<p>Alternatively, from a downloaded or cloned checkout:</p>
+<pre>python -m pip install .</pre>
+<p>A venv is optional and managed with Python's standard tools. Installation creates no service or PATH changes. Version 0.2.1 also remains available through the <a href="https://pypi.autoactuary.com/simple/ssh-snakehole/">private Auto Actuary index</a>, which requires an account.</p>
 <table><thead><tr><th>Computer</th><th>Type in PowerShell, Bash or cmd</th><th>Result</th></tr></thead><tbody>
 <tr><td>Assisted</td><td><code>python -m ssh_snakehole open</code></td><td>Prints a number and four words. Read the code to the operator and leave the terminal open.</td></tr>
 <tr><td>Operator</td><td><code>python -m ssh_snakehole connect CODE</code></td><td>Pairs, encrypts a reconnection ticket, verifies SSH and prints its ID.</td></tr>
