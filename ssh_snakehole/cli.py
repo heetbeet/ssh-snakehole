@@ -257,7 +257,12 @@ async def run(args):
                     raise ValueError(
                         "Keepalive interval must be shorter than the host inactivity timeout"
                     )
-                await asyncio.sleep(args.interval)
+                try:
+                    async with asyncio.timeout(args.interval):
+                        await session.connection.wait_closed()
+                except TimeoutError:
+                    continue
+                raise SnakeholeError("Connection ended; access renewal stopped")
         elif args.action == "close":
             await session.close_host()
             vault.resolve(token).unlink(missing_ok=True)

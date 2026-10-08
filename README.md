@@ -90,7 +90,7 @@ python -m ssh_snakehole keepalive --interval 1200
 
 Enter the token once. The process holds it in memory and renews access every
 20 minutes. Stop that process when finished; an agent must own and clean up its
-keepalive subprocess. `keepalive` without an interval sends one renewal. Normal
+keepalive subprocess. It exits if SSH closes. `keepalive` without an interval sends one renewal. Normal
 authenticated commands such as `echo keepalive` also renew access. Idle SSH sockets
 and automatic transport keepalives do not renew it.
 
