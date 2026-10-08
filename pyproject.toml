@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssh-snakehole"
-version = "0.3.1"
+version = "0.3.2"
 description = "Temporary, code-paired SSH as a Python library"
 requires-python = ">=3.11,<3.15"
 dependencies = [
