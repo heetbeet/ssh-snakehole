@@ -10,6 +10,7 @@ class Idle:
     def __init__(self, timeout: float):
         if (
             isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
             or not math.isfinite(timeout)
             or not 0 < timeout <= 1800
         ):

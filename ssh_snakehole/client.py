@@ -333,16 +333,19 @@ class Session:
     async def keepalive(self) -> None:
         """Renew host inactivity without executing a shell command."""
         self.ticket.check_live()
-        async with asyncio.timeout(10):
-            async with self._native.create_process(
-                subsystem="snakehole-keepalive", encoding=None
-            ) as process:
-                process.stdin.write(self.info.session_id.encode() + b"\n")
-                process.stdin.write_eof()
-                reply = await process.stdout.read(64)
-                await process.wait_closed()
-                if reply != b"alive\n" or process.exit_status != 0:
-                    raise OutcomeUnknown("Host did not acknowledge keepalive")
+        try:
+            async with asyncio.timeout(10):
+                async with self._native.create_process(
+                    subsystem="snakehole-keepalive", encoding=None
+                ) as process:
+                    process.stdin.write(self.info.session_id.encode() + b"\n")
+                    process.stdin.write_eof()
+                    reply = await process.stdout.read(64)
+                    await process.wait_closed()
+                    if reply != b"alive\n" or process.exit_status != 0:
+                        raise OutcomeUnknown("Host did not acknowledge keepalive")
+        except (OSError, asyncssh.Error, TimeoutError) as exc:
+            raise OutcomeUnknown("Remote keepalive could not be confirmed") from exc
 
     async def close_host(self) -> CloseReceipt:
         if self.close_receipt:

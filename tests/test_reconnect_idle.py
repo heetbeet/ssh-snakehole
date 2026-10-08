@@ -159,6 +159,32 @@ class ReconnectIdle(unittest.IsolatedAsyncioTestCase):
                 )
                 await independent.close_host()
 
+    @unittest.skipUnless(os.name == "posix", "POSIX process groups")
+    async def test_completed_worker_does_not_signal_a_retired_group(self):
+        async with open_host(relay=self.config) as host:
+            async with connect(host.code, relay=self.config) as session:
+                with patch(
+                    "ssh_snakehole.process.os.killpg",
+                    side_effect=PermissionError("Retired group"),
+                ) as signal_group:
+                    result = await session.run_argv(
+                        [sys.executable, "-c", "print('finished')"]
+                    )
+                    self.assertEqual(result.stdout.strip(), b"finished")
+                    await session.keepalive()
+                    signal_group.assert_not_called()
+                await session.close_host()
+
+    async def test_lost_transfer_connection_releases_busy_clock(self):
+        async with open_host(relay=self.config, idle_timeout=0.5) as host:
+            async with connect(host.code, relay=self.config) as session:
+                client = (await session.files()).client
+                file = await client.open(str(Path(sys.executable)), "rb")
+                self.assertTrue(await file.read(1))
+                await session.aclose()
+                await asyncio.wait_for(host.wait_closed(), 3)
+                self.assertEqual(host.idle.active, 0)
+
     async def test_encrypted_file_cannot_be_used_with_another_token_or_modified(self):
         async with open_host(relay=self.config) as host:
             code = host.code

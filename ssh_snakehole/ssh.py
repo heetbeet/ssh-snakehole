@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import socket
 import weakref
@@ -207,8 +208,9 @@ class SSHConnection:
         except asyncio.CancelledError:
             raise
         except Exception:
-            process.stderr.write(b"ssh-snakehole: remote operation failed\n")
-            process.exit(126)
+            with contextlib.suppress(OSError, asyncssh.Error):
+                process.stderr.write(b"ssh-snakehole: remote operation failed\n")
+                process.exit(126)
         finally:
             closing.cancel()
             work.cancel()

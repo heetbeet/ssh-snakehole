@@ -145,8 +145,9 @@ class SFTPServer(asyncssh.SFTPServer):
         await file_call(os.fsync, file.fileno())
 
     async def exit(self):
-        for file in tuple(self.files):
-            await self.close(file)
+        await asyncio.gather(
+            *(self.close(file) for file in tuple(self.files)), return_exceptions=True
+        )
 
 
 @dataclass(frozen=True)
