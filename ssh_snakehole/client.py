@@ -22,6 +22,7 @@ from .errors import (
     PairingExpired,
     RelayUnavailable,
     RemoteCommandFailed,
+    SessionExpired,
 )
 from .host import RelayConfig
 from .pairing import Pairing
@@ -251,9 +252,17 @@ class Session:
             or any(type(n) is not int or not 1 <= n <= 1000 for n in size)
         ):
             raise ValueError("Invalid terminal type or dimensions")
-        async with self._deadline(None):
-            async with self._process(command, terminal=(term_type, size)) as process:
-                yield process
+        deadline = self._deadline(None)
+        try:
+            async with deadline:
+                async with self._process(
+                    command, terminal=(term_type, size)
+                ) as process:
+                    yield process
+        except TimeoutError as exc:
+            if deadline.expired():
+                raise SessionExpired("Host lifetime expired") from exc
+            raise
 
     async def _run(
         self,

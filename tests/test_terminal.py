@@ -150,6 +150,16 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.relay.aclose()
 
+    async def test_explicit_lifetime_ends_terminal_with_a_clear_error(self):
+        from ssh_snakehole.errors import SessionExpired
+
+        async with open_host(relay=self.config, lifetime=1.5) as host:
+            async with connect(host.code, relay=self.config) as session:
+                with self.assertRaisesRegex(SessionExpired, "Host lifetime expired"):
+                    async with session.terminal():
+                        await asyncio.sleep(10)
+                await asyncio.wait_for(host.wait_closed(), 3)
+
     async def test_python_repl_resize_unicode_colors_and_ctrl_c(self):
         command = (
             f"& '{sys.executable}' -i -q; exit $LASTEXITCODE"
