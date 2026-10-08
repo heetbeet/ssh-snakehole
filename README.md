@@ -4,11 +4,14 @@ Temporary SSH access for Python programs and agents. Run a host, share its code,
 execute commands or transfer files, then close access. Both computers connect
 outward through Magic Wormhole relays. No port forwarding is needed.
 
-Requires CPython 3.11-3.14. Install this checkout in your usual Python environment:
+Requires CPython 3.11-3.14. Install from GitHub in your usual Python environment:
 
 ```sh
-python -m pip install .
+python -m pip install https://github.com/heetbeet/ssh-snakehole/archive/refs/heads/master.zip
 ```
+
+This downloads the current source and installs its dependencies. Git is not required.
+The package is not published on public PyPI.
 
 On the computer being assisted:
 
@@ -25,11 +28,12 @@ python -m ssh_snakehole exec ID "COMMAND"
 python -m ssh_snakehole close ID
 ```
 
-`connect` asks for a passphrase, saves an encrypted ticket and prints its ID.
+`CODE` is the one-use code printed by the host. `connect` asks for a passphrase,
+saves an encrypted ticket on the operator's computer and prints its `ID`. Use that
+ID for subsequent commands. The passphrase protects the saved ticket locally.
 Agents can supply `SSH_SNAKEHOLE_PASSPHRASE` through their secret environment.
-The Python API below keeps credentials in memory and needs no vault passphrase.
 
-The importable API keeps credentials in memory:
+The importable API keeps credentials in memory and needs no vault passphrase:
 
 ```python
 import asyncio
