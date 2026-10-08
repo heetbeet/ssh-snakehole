@@ -18,7 +18,7 @@ from .errors import InvalidCode, PairingFailed, ProtocolViolation
 from .websocket import WebSocket
 from .wire import json_bytes, parse_json
 
-APPID = "io.github.heetbeet.ssh-snakehole/v2"
+APPID = "io.github.heetbeet.ssh-snakehole/v3"
 MAILBOX = "wss://relay.magic-wormhole.io/v1"
 
 
@@ -189,9 +189,9 @@ class Pairing:
         del pake
         await self.command("release", nameplate=self.nameplate)
         self.released = True
-        await self.send("version", {"app_versions": {"ssh-snakehole": 2}})
+        await self.send("version", {"app_versions": {"ssh-snakehole": 3}})
         version = await self.receive("version")
-        if version != {"app_versions": {"ssh-snakehole": 2}}:
+        if version != {"app_versions": {"ssh-snakehole": 3}}:
             raise PairingFailed("Unsupported pairing peer")
 
     def phase_key(self, side, phase):
