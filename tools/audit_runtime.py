@@ -18,6 +18,7 @@ allowed = set(sys.stdlib_module_names) | {
     "spake2",
     "winpty",
     "ptyprocess",
+    "certifi",
 }
 extra = set()
 lines = 0

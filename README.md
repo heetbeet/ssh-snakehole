@@ -127,6 +127,9 @@ UDP punching; relay fallback remains available. A reachable Transit relay is
 required for initial negotiation even when SSH later travels directly. Setup can
 take several seconds; reuse a Python Session for repeated work.
 
+Secure relays verify against certifi's Mozilla CA bundle. Set `SSL_CERT_FILE`
+for an explicitly trusted private CA bundle; certificate verification stays enabled.
+
 Default STUN is `stun.l.google.com:19302`. Before the subcommand, use
 `--stun stun:HOST:PORT` to select another server or `--stun none` for local candidates.
 
