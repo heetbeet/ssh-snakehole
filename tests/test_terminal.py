@@ -25,15 +25,20 @@ class Output:
         self.all = bytearray()
 
     async def until(self, marker):
-        async with asyncio.timeout(20):
-            while marker not in ANSI.sub(b"", self.pending):
-                data = await self.reader.read(32768)
-                if not data:
-                    raise AssertionError(
-                        f"Terminal ended before {marker!r}: {bytes(self.pending)!r}"
-                    )
-                self.pending.extend(data)
-                self.all.extend(data)
+        try:
+            async with asyncio.timeout(20):
+                while marker not in ANSI.sub(b"", self.pending):
+                    data = await self.reader.read(32768)
+                    if not data:
+                        raise AssertionError(
+                            f"Terminal ended before {marker!r}: {bytes(self.pending)!r}"
+                        )
+                    self.pending.extend(data)
+                    self.all.extend(data)
+        except TimeoutError:
+            raise AssertionError(
+                f"Missing {marker!r}: {bytes(self.pending)!r}"
+            ) from None
         result = ANSI.sub(b"", self.pending)
         end = result.index(marker) + len(marker)
         self.pending = bytearray(result[end:])
@@ -503,7 +508,9 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         await out.until(b"CLI42")
                         await out.until(b">>> ")
                         # Left arrow and backspace must reach Python's line editor.
-                        await tty.send(b"print('EDIT'+str(6*8))\x1b[D\x1b[D\x7f7\r")
+                        await tty.send(b"print('EDIT'+str(6*8))")
+                        await asyncio.sleep(0.1)
+                        await tty.send(b"\x1b[D\x1b[D\x7f7\r")
                         await out.until(b"EDIT42")
                         await out.until(b">>> ")
                         tty.resize(104, 37)
