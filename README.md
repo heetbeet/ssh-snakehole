@@ -34,7 +34,12 @@ operator's computer:
 python -m ssh_snakehole connect
 ```
 
-Enter CODE at the hidden prompt. The connection opens a command prompt and shows:
+Enter CODE at the hidden prompt. If your command line is trusted and unrecorded,
+you can also use `python -m ssh_snakehole connect CODE`. Arguments can appear in
+shell history, process listings and tool logs, even when history saving is disabled.
+Hidden input remains the default. CODE and `--code-stdin` cannot be combined.
+
+The connection opens a command prompt and shows:
 
 ```text
 Connected to HOST as USER.

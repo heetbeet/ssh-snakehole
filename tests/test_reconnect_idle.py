@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ssh_snakehole import RelayConfig, connect, open_host, vault
-from ssh_snakehole.cli import interactive, parser
+from ssh_snakehole.cli import interactive, parser, run
 from ssh_snakehole.console import read_secret
 from ssh_snakehole.errors import VaultUnlockFailed
 from ssh_snakehole.idle import Idle
@@ -36,8 +36,12 @@ class Input(unittest.TestCase):
         secret = "a-private-code"
         stream = io.StringIO()
         with contextlib.redirect_stderr(stream), self.assertRaises(SystemExit):
-            parser().parse_args(["connect", secret])
+            parser().parse_args(["connect", secret, "extra"])
         self.assertNotIn(secret, stream.getvalue())
+        args = parser().parse_args(["connect", secret, "--code-stdin", "--detach"])
+        with self.assertRaisesRegex(ValueError, "either CODE") as error:
+            asyncio.run(run(args))
+        self.assertNotIn(secret, str(error.exception))
 
     def test_piped_secret_is_bounded_and_not_reflected(self):
         stream = io.TextIOWrapper(io.BytesIO(b"private" * 100 + b"\n"))

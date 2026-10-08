@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ssh_snakehole import RelayConfig, open_host
 from ssh_snakehole.platform import elevated
 from ssh_snakehole.relay import Relay
 
@@ -147,6 +148,21 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             )
             async with asyncio.timeout(10):
                 self.assertEqual(await host.wait(), 0)
+            config = RelayConfig(
+                f"ws://127.0.0.1:{relay.mailbox_port}/v1",
+                f"tcp://127.0.0.1:{relay.transit_port}",
+            )
+            async with open_host(relay=config) as positional_host:
+                token = (
+                    (
+                        await invoke(
+                            "connect", positional_host.code, "--detach", secret=""
+                        )
+                    )
+                    .strip()
+                    .decode("ascii")
+                )
+                await invoke("close", "--token-stdin", secret=token)
         finally:
             if renewal is not None and renewal.returncode is None:
                 renewal.kill()
