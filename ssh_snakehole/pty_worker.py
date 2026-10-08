@@ -25,6 +25,9 @@ def serve(request, descriptor):
         pty = PTY(cols, rows, backend=Backend.ConPTY)
         if not pty.spawn(command[0], " " + subprocess.list2cmdline(command[1:])):
             raise OSError("ConPTY could not start the shell")
+        # ConPTY starts at (0, 0). Move the client's existing viewport into
+        # scrollback first, preserving its prompt and printed reconnection token.
+        os.write(1, b"\x1b[9999;1H" + b"\r\n" * rows + b"\x1b[H")
     else:
         import termios
 
@@ -162,6 +165,8 @@ def serve(request, descriptor):
     # This thread exists only inside the owned worker, which dies with the channel.
     threading.Thread(target=feed, daemon=True).start()
     exited = None
+    startup = sys.platform == "win32"
+    pending = ""
     try:
         while True:
             if failures:
@@ -172,6 +177,27 @@ def serve(request, descriptor):
                 data = b""
             except (EOFError, OSError):
                 break
+            if startup and data:
+                assert isinstance(data, str)
+                data = pending + data
+                pending = ""
+                for query in ("\x1b[c", "\x1b[0c"):
+                    if query in data:
+                        # This is ConPTY's own startup query, not an application's
+                        # query. A conservative VT100 reply avoids its 3s wait,
+                        # even when a nested local ConPTY consumes DA replies.
+                        pty.write("\x1b[?1;2c")
+                        data = data.replace(query, "", 1)
+                        startup = False
+                        break
+                else:
+                    for count in range(min(3, len(data)), 0, -1):
+                        if any(
+                            query.startswith(data[-count:])
+                            for query in ("\x1b[c", "\x1b[0c")
+                        ):
+                            pending, data = data[-count:], data[:-count]
+                            break
             if data:
                 data = data.encode("utf-8") if isinstance(data, str) else data
                 view = memoryview(data)
@@ -186,8 +212,11 @@ def serve(request, descriptor):
                     sys.platform != "win32" or time.monotonic() - exited > 0.25
                 ):
                     break
-            time.sleep(0.01)
+            if not data:
+                time.sleep(0.01)
         if sys.platform == "win32":
+            if pending:
+                os.write(1, pending.encode("utf-8"))
             return pty.get_exitstatus() or 0
         pty.wait()
         return (

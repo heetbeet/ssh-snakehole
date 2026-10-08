@@ -178,6 +178,32 @@ class LocalTTY:
 
 @unittest.skipIf(elevated(), "Host requires a non-admin account")
 class Terminal(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows ConPTY startup")
+    async def test_terminal_burst_needs_no_client_capability_reply(self):
+        fixture = Path(__file__).with_name("terminal_burst.py")
+        async with open_host(relay=self.config) as host:
+            async with connect(host.code, relay=self.config) as session:
+                async with session.terminal(
+                    f"& '{sys.executable}' '{fixture}'"
+                ) as process:
+                    # An API consumer is not necessarily a terminal emulator.
+                    # Startup must not impose ConPTY's 3s capability timeout.
+                    async with asyncio.timeout(2.5):
+                        data = await process.stdout.read()
+                    # The worker handles only ConPTY startup. A later query
+                    # written by the application must still reach the client.
+                    self.assertEqual(data.count(b"\x1b[c"), 1)
+                    self.assertIn(b"APP-QUERY:\x1b[c", data)
+                    self.assertTrue(
+                        data.startswith(b"\x1b[9999;1H" + b"\r\n" * 24 + b"\x1b[H")
+                    )
+                    plain = ANSI.sub(b"", data)
+                    self.assertIn(b"BURST-BEGIN", plain)
+                    self.assertEqual(plain.count(b"burst-line"), 10000)
+                    self.assertIn(b"BURST-END", plain)
+                    self.assertEqual((await process.wait()).exit_code, 0)
+                await session.close_host()
+
     async def asyncSetUp(self):
         self.relay = await Relay().start()
         self.config = RelayConfig(

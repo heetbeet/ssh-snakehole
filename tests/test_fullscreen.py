@@ -65,6 +65,43 @@ class FullScreen(unittest.IsolatedAsyncioTestCase):
     asyncSetUp = test_terminal.Terminal.asyncSetUp
     asyncTearDown = test_terminal.Terminal.asyncTearDown
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows absolute cursor output")
+    async def test_remote_shell_does_not_overwrite_local_terminal_content(self):
+        from ssh_snakehole import connect
+
+        emulator = await asyncio.create_subprocess_exec(
+            "node",
+            str(Path(__file__).with_name("terminal_emulator.cjs")),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        try:
+            async with open_host(relay=self.config) as host:
+                async with connect(host.code, relay=self.config) as session:
+                    async with session.terminal(
+                        "Write-Host 'REMOTE-CURSOR-OK'; Start-Sleep -Milliseconds 100",
+                        size=(100, 30),
+                    ) as process:
+                        screen = Screen(emulator, process)
+                        local = (
+                            "LOCAL OLD HISTORY\r\n" * 20
+                            + "Reconnection token: TEST-TOKEN\r\nLOCAL COMMAND\r\n"
+                        ).encode()
+                        await screen.update({"data": base64.b64encode(local).decode()})
+                        while data := await process.stdout.read(32768):
+                            await screen.update(
+                                {"data": base64.b64encode(data).decode()}
+                            )
+                        self.assertIn("REMOTE-CURSOR-OK", screen.state["screen"])
+                        self.assertNotIn("LOCAL OLD HISTORY", screen.state["screen"])
+                        self.assertNotIn("LOCAL COMMAND", screen.state["screen"])
+                        self.assertIn("LOCAL COMMAND", screen.state["history"])
+                        self.assertIn("TEST-TOKEN", screen.state["history"])
+                    await session.close_host()
+        finally:
+            emulator.stdin.close()
+            await emulator.communicate()
+
     async def test_fullscreen_unicode_editing_paste_resize_and_restore(self):
         fixture = Path(__file__).with_name("terminal_app.py").resolve()
         emulator_file = Path(__file__).with_name("terminal_emulator.cjs").resolve()

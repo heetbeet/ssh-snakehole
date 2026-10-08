@@ -51,6 +51,11 @@ class Bridge:
     def __init__(self, reader, writer):
         self.reader, self.writer = reader, writer
         self.socket, self.peer = socket.socketpair()
+        # Windows implements socketpair() with loopback TCP. Small SSH packets
+        # must not wait for Nagle/delayed ACK on either half of the local bridge.
+        for endpoint in (self.socket, self.peer):
+            if endpoint.family in (socket.AF_INET, socket.AF_INET6):
+                endpoint.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.socket.setblocking(False)
         self.peer.setblocking(False)
         self.shutdown = None

@@ -32,6 +32,9 @@ This opens the remote account's shell: PowerShell on Windows, the user's shell o
 Unix. Its prompt, working directory, variables, interactive Python, colors and
 terminal resizing work through a real SSH PTY. Ctrl+C reaches the remote program.
 Type `exit` to disconnect. Host Ctrl+C revokes access immediately.
+Windows sessions start on a fresh viewport because ConPTY uses absolute cursor
+positions. Earlier local content, including the reconnection token, moves into
+scrollback so the remote prompt cannot overwrite it.
 
 Before opening the shell, `connect` prints a reconnection token. Keep it if you want
 to reconnect later. The invitation CODE is consumed; the new token unlocks encrypted
@@ -124,8 +127,15 @@ Captured `run()` output defaults to 8 MiB. Retain `session.ticket` for reconnect
 
 The connection displays `direct-udp` or `relay`. Some NATs and firewalls prevent
 UDP punching; relay fallback remains available. A reachable Transit relay is
-required for initial negotiation even when SSH later travels directly. Setup can
-take several seconds; reuse a Python Session for repeated work.
+required for initial negotiation even when SSH later travels directly. Both peers
+gather ICE candidates concurrently. Unanswered STUN requests can add five seconds;
+blocked UDP can add another eight seconds before relay fallback. Pairing, relay
+negotiation and SSH authentication also require network round trips. Reuse a Python
+Session for repeated work rather than reconnecting for every command.
+
+Output streams in batches with sliding-window flow control, as in SSH. It does not
+wait for each character or line to be acknowledged. Network latency still affects
+interactive echo, and sustained throughput depends on the route and packet loss.
 
 Secure relays verify against certifi's Mozilla CA bundle. Set `SSL_CERT_FILE`
 for an explicitly trusted private CA bundle; certificate verification stays enabled.
@@ -141,7 +151,7 @@ An interrupted session does not switch transports or replay commands. Reconnect
 with the token or retained ticket; each new connection tries ICE again.
 `OutcomeUnknown` means no exit status was confirmed. Inspect effects before retrying;
 file publication and remote close can also remain unconfirmed after a lost reply.
-Upgrade both peers to 0.5.0 and open a fresh invitation for terminal support.
+Upgrade both peers and open a fresh invitation to receive the latest terminal fixes.
 
 The package installs no service and edits no PATH or global SSH settings. AsyncSSH
 owns SSH and SFTP; aiortc owns the reliable ICE transport; ptyprocess and pywinpty

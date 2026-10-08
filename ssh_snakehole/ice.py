@@ -228,10 +228,22 @@ def validate_sdp(sdp):
         raise ProtocolViolation("Invalid ICE description")
 
 
-async def negotiate(reader, writer, key, *, sender, stun):
+def prepare(stun):
+    """Gather candidates while TCP rendezvous and peer authentication proceed."""
+    stream = DirectStream(
+        RTCPeerConnection(
+            RTCConfiguration(iceServers=[RTCIceServer(stun)] if stun else [])
+        )
+    )
+    stream.prepare_task = asyncio.create_task(
+        stream.peer.sctp.transport.transport.iceGatherer.gather()
+    )
+    return stream
+
+
+async def negotiate(reader, writer, key, *, sender, stream):
     """Choose direct UDP or the existing stream before starting SSH."""
     signal_key = hkdf(key, b"ssh-snakehole/ice-signalling/3")
-    stream = None
     selected = False
     handed_off = False
 
@@ -263,23 +275,16 @@ async def negotiate(reader, writer, key, *, sender, stun):
             raise ProtocolViolation("Invalid ICE negotiation transcript")
         return data["attempt"], data["value"]
 
-    def create():
-        return DirectStream(
-            RTCPeerConnection(
-                RTCConfiguration(
-                    iceServers=[RTCIceServer(stun)] if stun else [],
-                )
-            )
-        )
-
     try:
         if sender:
             attempt = secrets.token_hex(16)
             offer = None
             try:
-                stream = create()
-                offer = await description(stream, "offer")
-                validate_sdp(offer)
+                if stream:
+                    async with asyncio.timeout(PREPARE_TIMEOUT):
+                        await asyncio.shield(stream.prepare_task)
+                    offer = await description(stream, "offer")
+                    validate_sdp(offer)
             except (TimeoutError, OSError, ValueError):
                 if stream:
                     await close_stream(stream)
@@ -306,9 +311,10 @@ async def negotiate(reader, writer, key, *, sender, stun):
             attempt, offer = await receive("offer")
             validate_sdp(offer)
             answer = None
-            if offer is not None:
+            if offer is not None and stream:
                 try:
-                    stream = create()
+                    async with asyncio.timeout(PREPARE_TIMEOUT):
+                        await asyncio.shield(stream.prepare_task)
                     answer = await description(stream, "answer", offer)
                     validate_sdp(answer)
                 except (TimeoutError, OSError, ValueError):

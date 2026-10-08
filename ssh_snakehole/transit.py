@@ -47,13 +47,24 @@ def endpoint(url):
 async def dial(key, side, *, sender=False, relay=RELAY, stun=STUN):
     endpoint(relay)
     validate_stun(stun)
-    reader: asyncio.StreamReader | WebSocketStream
-    writer: asyncio.StreamWriter | WebSocketStream
-    if urlsplit(relay).scheme in ("ws", "wss"):
-        reader = writer = WebSocketStream(await WebSocket.connect(relay, limit=262160))
-    else:
-        reader, writer = await asyncio.open_connection(*endpoint(relay), limit=65536)
+    from .ice import negotiate, prepare
+
+    stream = None
     try:
+        stream = prepare(stun)
+    except (OSError, ValueError):
+        pass
+    reader: asyncio.StreamReader | WebSocketStream
+    writer: asyncio.StreamWriter | WebSocketStream | None = None
+    try:
+        if urlsplit(relay).scheme in ("ws", "wss"):
+            reader = writer = WebSocketStream(
+                await WebSocket.connect(relay, limit=262160)
+            )
+        else:
+            reader, writer = await asyncio.open_connection(
+                *endpoint(relay), limit=65536
+            )
         token = hkdf(key, b"transit_relay_token").hex()
         writer.write(f"please relay {token} for side {side}\n".encode("ascii"))
         await writer.drain()
@@ -72,9 +83,14 @@ async def dial(key, side, *, sender=False, relay=RELAY, stun=STUN):
             await writer.drain()
         elif await reader.readexactly(3) != b"go\n":
             raise ProtocolViolation("Transit leader did not select stream")
-        from .ice import negotiate
-
-        return await negotiate(reader, writer, key, sender=sender, stun=stun)
+        negotiating = stream
+        # Negotiation now owns candidates even if it fails or is cancelled.
+        stream = None
+        return await negotiate(reader, writer, key, sender=sender, stream=negotiating)
     except BaseException:
-        await close_stream(writer)
+        if writer is not None:
+            await close_stream(writer)
         raise
+    finally:
+        if stream:
+            await close_stream(stream)
