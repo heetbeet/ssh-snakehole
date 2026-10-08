@@ -23,6 +23,7 @@ class Native(unittest.IsolatedAsyncioTestCase):
         config = RelayConfig(
             f"ws://127.0.0.1:{relay.mailbox_port}/v1",
             f"tcp://127.0.0.1:{relay.transit_port}",
+            stun=None,
         )
         try:
             async with open_host(relay=config, lifetime=120) as host:

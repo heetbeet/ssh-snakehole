@@ -137,6 +137,7 @@ class Session:
         self.ticket = ticket
         self.info = ticket.info
         self.connection = connection
+        self.transport = getattr(connection.writer, "route", "relay")
         self._files: Files | None = None
         self._files_lock = asyncio.Lock()
         self.close_receipt: CloseReceipt | None = None
@@ -399,6 +400,7 @@ async def connect(
                 unb64(ticket.offer["transit_key"], 32),
                 ticket.offer["operator_side"],
                 relay=ticket.offer["relay"],
+                stun=relay.stun if relay is not None else ticket.offer["stun"],
             )
             connection = SSHConnection(
                 reader,

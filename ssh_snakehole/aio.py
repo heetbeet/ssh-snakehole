@@ -23,7 +23,7 @@ async def close_stream(writer):
     """Bound shutdown even when a TLS peer never completes its close handshake."""
     writer.close()
     try:
-        async with asyncio.timeout(2):
+        async with asyncio.timeout(getattr(writer, "close_timeout", 2)):
             await writer.wait_closed()
     except BaseException as exc:
         writer.transport.abort()

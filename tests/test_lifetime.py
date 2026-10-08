@@ -22,6 +22,7 @@ class Lifetime(unittest.IsolatedAsyncioTestCase):
             config = RelayConfig(
                 f"ws://127.0.0.1:{relay.mailbox_port}/v1",
                 f"tcp://127.0.0.1:{relay.transit_port}",
+                stun=None,
             )
             with tempfile.TemporaryDirectory() as directory:
                 marker = Path(directory) / "escaped"
@@ -48,6 +49,7 @@ class Lifetime(unittest.IsolatedAsyncioTestCase):
             config = RelayConfig(
                 f"ws://127.0.0.1:{relay.mailbox_port}/v1",
                 f"tcp://127.0.0.1:{relay.transit_port}",
+                stun=None,
             )
             host = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -55,6 +57,8 @@ class Lifetime(unittest.IsolatedAsyncioTestCase):
                 "ssh_snakehole",
                 "--mailbox",
                 config.mailbox,
+                "--stun",
+                "none",
                 "--relay",
                 config.transit,
                 "open",

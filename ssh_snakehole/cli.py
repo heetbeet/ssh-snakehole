@@ -25,6 +25,7 @@ def parser():
     )
     p.add_argument("--mailbox", help="Explicit mailbox WebSocket URL")
     p.add_argument("--relay", help="Explicit Transit relay URL")
+    p.add_argument("--stun", help="STUN URL; none uses local ICE candidates only")
     sub = p.add_subparsers(dest="action", required=True)
     host = sub.add_parser(
         "open", help="Print a one-use code and host until revoked or inactive"
@@ -93,10 +94,12 @@ def parser():
 
 
 def config(args):
-    if args.mailbox or args.relay:
+    if args.mailbox or args.relay or args.stun:
         defaults = RelayConfig()
         return RelayConfig(
-            args.mailbox or defaults.mailbox, args.relay or defaults.transit
+            args.mailbox or defaults.mailbox,
+            args.relay or defaults.transit,
+            None if args.stun == "none" else args.stun or defaults.stun,
         )
     return None
 
@@ -216,13 +219,20 @@ async def run(args):
             ticket = await pair(code, relay=config(args))
         finally:
             code = None
+        # Pairing consumes CODE. Preserve accepted credentials even if the first
+        # network connection fails, so resume can recover without a new code.
+        token = await vault.save(ticket)
+        if args.detach:
+            print(token, flush=True)
+        else:
+            print(
+                f"Reconnection token: {token}\nKeep this private if you want to reconnect later. It unlocks the saved credentials here.\nIf connection fails, use resume with this token.\n",
+                flush=True,
+            )
         async with connect(ticket, relay=config(args)) as session:
-            token = await vault.save(ticket)
-            if args.detach:
-                print(token, flush=True)
-            else:
+            if not args.detach:
                 print(
-                    f"Connected to {session.info.host_name} as {session.info.process_user}.\n\nReconnection token: {token}\nKeep this private if you want to reconnect later. It unlocks the saved credentials here.\n\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
+                    f"Connected to {session.info.host_name} as {session.info.process_user}.\nTransport: {session.transport}.\n\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
                 )
                 if await interactive(session):
                     vault.resolve(token).unlink(missing_ok=True)
@@ -249,7 +259,7 @@ async def run(args):
     async with connect(ticket, relay=config(args)) as session:
         if args.action == "resume":
             print(
-                f"Connected to {session.info.host_name} as {session.info.process_user}.\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
+                f"Connected to {session.info.host_name} as {session.info.process_user}.\nTransport: {session.transport}.\nAccess expires after 30 minutes of inactivity.\nType close to revoke access; exit disconnects this client."
             )
             if await interactive(session):
                 vault.resolve(token).unlink(missing_ok=True)

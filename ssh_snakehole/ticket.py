@@ -11,10 +11,10 @@ from typing import Any
 
 from .errors import InvalidTicket, ProtocolViolation, SessionExpired
 from .ssh import key_public
-from .transit import endpoint
+from .transit import endpoint, validate_stun
 from .wire import b64, json_bytes, parse_json, unb64
 
-SCHEMA = "ssh-snakehole/2"
+SCHEMA = "ssh-snakehole/3"
 
 
 def timestamp(value: float) -> str:
@@ -61,6 +61,7 @@ def validate_offer(offer: dict[str, Any]) -> dict[str, Any]:
             "host_side",
             "operator_side",
             "relay",
+            "stun",
             "host_os",
             "host_name",
             "process_user",
@@ -85,6 +86,7 @@ def validate_offer(offer: dict[str, Any]) -> dict[str, Any]:
     key_public(unb64(offer["host_key"].split(" ")[1]))
     unb64(offer["transit_key"], 32)
     endpoint(offer["relay"])
+    validate_stun(offer["stun"])
     if offer["host_os"] not in ("windows", "linux", "macos") or offer[
         "privilege"
     ] not in ("user", "admin"):

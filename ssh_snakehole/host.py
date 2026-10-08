@@ -29,7 +29,7 @@ from .process import ServerChannel, parse_argv, serve_command, shell_command
 from .sftp import SFTPServer
 from .ssh import SSHConnection, key_blob, key_public
 from .ticket import SCHEMA, HostInfo, digest, strict, timestamp
-from .transit import RELAY, dial, endpoint
+from .transit import RELAY, STUN, dial, endpoint, validate_stun
 from .wire import b64, unb64
 
 
@@ -37,9 +37,11 @@ from .wire import b64, unb64
 class RelayConfig:
     mailbox: str = MAILBOX
     transit: str = RELAY
+    stun: str | None = STUN
 
     def __post_init__(self) -> None:
         endpoint(self.transit)
+        validate_stun(self.stun)
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,7 @@ class Host:
             host_side=secrets.token_hex(8),
             operator_side=secrets.token_hex(8),
             relay=self.relay.transit,
+            stun=self.relay.stun,
             host_os=os_name,
             host_name=platform.node()[:128],
             process_user=process_user()[:128],
@@ -228,6 +231,7 @@ class Host:
                         self.offer["host_side"],
                         sender=True,
                         relay=self.relay.transit,
+                        stun=self.relay.stun,
                     )
                 connection = SSHConnection(
                     reader,

@@ -40,6 +40,8 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 "ssh_snakehole",
                 "--mailbox",
                 f"ws://127.0.0.1:{relay.mailbox_port}/v1",
+                "--stun",
+                "none",
                 "--relay",
                 f"tcp://127.0.0.1:{relay.transit_port}",
             ]
@@ -151,6 +153,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             config = RelayConfig(
                 f"ws://127.0.0.1:{relay.mailbox_port}/v1",
                 f"tcp://127.0.0.1:{relay.transit_port}",
+                stun=None,
             )
             async with open_host(relay=config) as positional_host:
                 token = (

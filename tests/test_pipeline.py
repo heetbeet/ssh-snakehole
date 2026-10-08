@@ -24,6 +24,7 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
         self.config = RelayConfig(
             f"ws://127.0.0.1:{self.relay.mailbox_port}/v1",
             f"tcp://127.0.0.1:{self.relay.transit_port}",
+            stun=None,
         )
 
     async def asyncTearDown(self):
@@ -33,6 +34,7 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
         async with open_host(lifetime=120, relay=config) as host:
             code = host.code
             async with connect(code, relay=config) as session:
+                self.assertEqual(session.transport, "direct-udp")
                 result = await session.run_argv(
                     [
                         sys.executable,
@@ -97,7 +99,9 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
     async def test_websocket_workflow(self):
         await self.workflow(
             RelayConfig(
-                self.config.mailbox, f"ws://127.0.0.1:{self.relay.mailbox_port}/transit"
+                self.config.mailbox,
+                f"ws://127.0.0.1:{self.relay.mailbox_port}/transit",
+                stun=None,
             )
         )
 
