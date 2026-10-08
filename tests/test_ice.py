@@ -173,6 +173,37 @@ class ICE(unittest.IsolatedAsyncioTestCase):
             finally:
                 await asyncio.gather(*delayed, return_exceptions=True)
 
+    async def test_reliable_stream_fits_low_mtu_paths(self):
+        a, b = await self.pair()
+        original = StunProtocol.send_data
+        dropped = 0
+
+        async def small_path(protocol, data, address):
+            nonlocal dropped
+            if len(data) > 1200:
+                dropped += 1
+                return
+            await original(protocol, data, address)
+
+        payload = os.urandom(512 * 1024)
+
+        async def produce():
+            for start in range(0, len(payload), CHUNK):
+                a.write(payload[start : start + CHUNK])
+                await a.drain()
+            a.write_eof()
+
+        with patch.object(StunProtocol, "send_data", small_path):
+            task = asyncio.create_task(produce())
+            try:
+                async with asyncio.timeout(20):
+                    self.assertEqual(await b.read(), payload)
+                    await task
+                self.assertEqual(dropped, 0)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
     async def test_slow_reader_applies_backpressure_and_close_wakes_writer(self):
         a, b = await self.pair()
         data = os.urandom(WINDOW * 3)

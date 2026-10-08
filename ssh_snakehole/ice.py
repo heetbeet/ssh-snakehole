@@ -18,10 +18,12 @@ from .errors import ProtocolViolation
 from .wire import json_bytes, parse_json, uint
 
 WINDOW = 256 * 1024
-CHUNK = 16384
+# Keep SCTP messages below its fragment size, leaving room for DTLS/UDP/IP on
+# 1280-byte VPN paths. Larger messages produced blackholed datagrams in testing.
+CHUNK = 1024
 SIGNAL_LIMIT = 65536
 PREPARE_TIMEOUT = 6
-OPEN_TIMEOUT = 4
+OPEN_TIMEOUT = 8
 
 
 class DirectStream:

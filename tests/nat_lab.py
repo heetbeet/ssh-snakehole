@@ -61,7 +61,11 @@ async def peer(role, settings):
             ],
             stdin=bytes(range(256)) * 4096,
         )
-        assert result.stdout == bytes(range(256)) * 4096 and result.exit_code == 7
+        assert result.stdout == bytes(range(256)) * 4096 and result.exit_code == 7, (
+            len(result.stdout),
+            result.exit_code,
+            result.stderr[:1024],
+        )
         observed = {"transport": session.transport}
         if session.transport == "direct-udp":
             pair = session.connection.writer.peer.sctp.transport.transport._connection._nominated[
@@ -346,6 +350,7 @@ async def lab():
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    cwd="/var/tmp",
                     start_new_session=True,
                 )
                 processes.append(process)
