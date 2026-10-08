@@ -75,6 +75,7 @@ class ReconnectIdle(unittest.IsolatedAsyncioTestCase):
         self.config = RelayConfig(
             f"ws://127.0.0.1:{self.relay.mailbox_port}/v1",
             f"tcp://127.0.0.1:{self.relay.transit_port}",
+            stun=None,
         )
 
     async def asyncTearDown(self):
@@ -228,6 +229,8 @@ class ReconnectIdle(unittest.IsolatedAsyncioTestCase):
                     "ssh_snakehole",
                     "--mailbox",
                     self.config.mailbox,
+                    "--stun",
+                    "none",
                     "--relay",
                     self.config.transit,
                 ]

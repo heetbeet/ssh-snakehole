@@ -12,6 +12,7 @@ allowed = set(sys.stdlib_module_names) | {
     "h11",
     "ssh_snakehole",
     "asyncssh",
+    "aiortc",
     "cryptography",
     "nacl",
     "spake2",

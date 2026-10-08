@@ -1,4 +1,4 @@
-"""AsyncSSH over an outbound relay, using a bounded local socket pair."""
+"""AsyncSSH over the selected stream, using a bounded local socket pair."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def key_public(blob):
 
 
 class Bridge:
-    """No network listener: adapt TCP or WebSocket Transit to AsyncSSH's socket API."""
+    """Adapt the selected byte stream to AsyncSSH's socket API."""
 
     def __init__(self, reader, writer):
         self.reader, self.writer = reader, writer

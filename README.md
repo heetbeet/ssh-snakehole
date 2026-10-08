@@ -1,8 +1,9 @@
 # ssh-snakehole
 
 Temporary SSH command and file access for people, Python programs and agents.
-Both computers connect outward through Magic Wormhole relays. No port forwarding
-or SSH daemon is needed.
+Both computers connect outward to pair, then try a direct UDP connection using
+ICE. SSH uses a reliable, ordered WebRTC data channel when that succeeds, or the
+relay when it does not. No port forwarding or SSH daemon is needed.
 
 This is a work in progress. Public PyPI releases will wait until the edge cases
 are resolved and we are happy with the library.
@@ -42,10 +43,12 @@ Hidden input remains the default. CODE and `--code-stdin` cannot be combined.
 The connection opens a command prompt and shows:
 
 ```text
-Connected to HOST as USER.
-
 Reconnection token: snake1_<token>
 Keep this private if you want to reconnect later. It unlocks the saved credentials here.
+If connection fails, use resume with this token.
+
+Connected to HOST as USER.
+Transport: direct-udp
 
 Access expires after 30 minutes of inactivity.
 Type close to revoke access; exit disconnects this client.
@@ -55,12 +58,16 @@ Type remote commands at `snakehole>`. Each runs independently through PowerShell
 on Windows or /bin/sh on Unix. Working-directory and environment changes do not
 carry between commands. This prompt executes commands without a PTY.
 
-Commands use the relay even when both computers are on the same network. A distant
-relay can add several seconds: each shell command needs two network round trips to
-start, plus execution and output delivery. Group related steps in one command and
-reuse a Python `Session` to avoid repeated connection setup. A nearby relay can be
-selected with the existing `--relay` option on both sides. Automatic direct
-connections are not implemented yet.
+The displayed transport is `direct-udp` or `relay`. ICE uses local addresses and
+STUN to try UDP hole punching across routers. Some NATs and firewalls prevent it;
+the existing relay remains the fallback. Connection setup can take several seconds
+while ICE tries candidates. Reuse a Python `Session` for repeated operations.
+
+The default STUN server is `stun.l.google.com:19302`. Set
+`--stun stun:HOST:PORT` before the subcommand to use your own, or `--stun none`
+to gather local addresses only. A reachable Transit relay is required for setup
+even when SSH later travels directly. Neither direct UDP nor relay routing grants
+access without the pinned SSH identities established through CODE.
 
 Use `close` when finished. It revokes access for everyone sharing this host session.
 `exit`, EOF or operator Ctrl+C disconnects this client and leaves time to reconnect.
@@ -139,7 +146,26 @@ accept `--token-stdin`; the trusted runner supplies the token from memory throug
 stdin. Do not construct `echo TOKEN | ...` or put a secret literal in a tool call.
 The runner must not log secret input or token output.
 
-The package installs no service and makes no PATH edits. It uses AsyncSSH,
+## Recovery
+
+If initial SSH setup fails after pairing, keep the printed token and run `resume`.
+`connect --detach` prints that token before connecting, so trusted runners should
+retain it even if the command exits unsuccessfully. The API attaches the accepted
+ticket to `ConnectTimeout` and `RelayUnavailable`; retry with `connect(error.ticket)`.
+
+A lost connection ends that SSH session. Reconnect using the token or retained
+ticket; ICE tries again and may select a different route. An established session
+does not silently switch transports. A command interrupted without a confirmed
+exit reports `OutcomeUnknown`. Inspect its effects before retrying: commands are
+never automatically replayed, and a lost file-publication reply can also leave
+commit status unknown. Failed `close` is unconfirmed, rather than claiming access
+was revoked; retry it while the host remains available.
+
+Both peers need version 0.4.0 for this protocol. Start a fresh invitation after
+upgrading; tickets from earlier versions are not converted.
+
+The package installs no service and makes no PATH edits. It uses aiortc for
+ICE, DTLS and SCTP, alongside AsyncSSH,
 cryptography, PyNaCl, spake2 and bcrypt. Encrypted files protect against file copying;
 they cannot protect live credentials from malware controlling your account or
 reading permitted process memory. Deliberate file/software changes remain after

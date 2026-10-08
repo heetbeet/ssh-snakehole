@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .sftp import TransferResult
     from .ticket import HostInfo, Ticket
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 __all__ = [
     "open_host",
     "connect",

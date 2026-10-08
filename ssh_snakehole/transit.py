@@ -9,6 +9,24 @@ from .errors import ProtocolViolation
 from .websocket import WebSocket, WebSocketStream
 
 RELAY = "tcp://transit.magic-wormhole.io:4001"
+STUN = "stun:stun.l.google.com:19302"
+
+
+def validate_stun(url):
+    if url is None:
+        return
+    if not isinstance(url, str) or not url.startswith("stun:") or len(url) > 512:
+        raise ValueError("Expected a stun:hostname:port URL or None")
+    parsed = urlsplit("udp://" + url[5:])
+    if (
+        not parsed.hostname
+        or not parsed.port
+        or parsed.username is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Expected a stun:hostname:port URL or None")
 
 
 def endpoint(url):
@@ -26,8 +44,9 @@ def endpoint(url):
     return parsed.hostname, parsed.port or (443 if parsed.scheme == "wss" else 80)
 
 
-async def dial(key, side, *, sender=False, relay=RELAY):
+async def dial(key, side, *, sender=False, relay=RELAY, stun=STUN):
     endpoint(relay)
+    validate_stun(stun)
     reader: asyncio.StreamReader | WebSocketStream
     writer: asyncio.StreamWriter | WebSocketStream
     if urlsplit(relay).scheme in ("ws", "wss"):
@@ -53,7 +72,9 @@ async def dial(key, side, *, sender=False, relay=RELAY):
             await writer.drain()
         elif await reader.readexactly(3) != b"go\n":
             raise ProtocolViolation("Transit leader did not select stream")
-        return reader, writer
+        from .ice import negotiate
+
+        return await negotiate(reader, writer, key, sender=sender, stun=stun)
     except BaseException:
         await close_stream(writer)
         raise

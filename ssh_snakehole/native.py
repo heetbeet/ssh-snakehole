@@ -93,6 +93,7 @@ async def proxy(route):
             unb64(offer["transit_key"], 32),
             offer["operator_side"],
             relay=offer["relay"],
+            stun=offer["stun"],
         )
 
     async def upstream():
