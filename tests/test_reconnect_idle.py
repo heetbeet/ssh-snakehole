@@ -159,7 +159,7 @@ class ReconnectIdle(unittest.IsolatedAsyncioTestCase):
                 )
                 await independent.close_host()
 
-    @unittest.skipUnless(os.name == "posix", "POSIX process groups")
+    @unittest.skipUnless(sys.platform != "win32", "POSIX process groups")
     async def test_completed_worker_does_not_signal_a_retired_group(self):
         async with open_host(relay=self.config) as host:
             async with connect(host.code, relay=self.config) as session:
