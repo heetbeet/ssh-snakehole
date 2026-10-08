@@ -18,6 +18,22 @@ VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))["project"]
 
 
 class Delivery(unittest.TestCase):
+    def test_command_worker_starts_without_loading_network_dependencies(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import sys; import ssh_snakehole.worker; "
+                "assert not {'asyncssh', 'cryptography', 'nacl', 'spake2', 'wsproto'} & sys.modules.keys(); "
+                "import ssh_snakehole; "
+                "assert all(getattr(ssh_snakehole, name) is not None for name in ssh_snakehole.__all__)",
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_wheel_contains_current_package_sources_only(self):
         wheel = ROOT / f"dist/ssh_snakehole-{VERSION}-py3-none-any.whl"
         if not wheel.exists():

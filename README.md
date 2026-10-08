@@ -55,6 +55,13 @@ Type remote commands at `snakehole>`. Each runs independently through PowerShell
 on Windows or /bin/sh on Unix. Working-directory and environment changes do not
 carry between commands. This prompt executes commands without a PTY.
 
+Commands use the relay even when both computers are on the same network. A distant
+relay can add several seconds: each shell command needs two network round trips to
+start, plus execution and output delivery. Group related steps in one command and
+reuse a Python `Session` to avoid repeated connection setup. A nearby relay can be
+selected with the existing `--relay` option on both sides. Automatic direct
+connections are not implemented yet.
+
 Use `close` when finished. It revokes access for everyone sharing this host session.
 `exit`, EOF or operator Ctrl+C disconnects this client and leaves time to reconnect.
 Host Ctrl+C revokes access immediately.
