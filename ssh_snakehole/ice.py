@@ -303,12 +303,25 @@ async def negotiate(reader, writer, key, *, sender, stun):
             selected = direct and acknowledged
             await send("commit", attempt, selected)
         else:
+            # Gather while the offer travels, including STUN retries. Waiting
+            # for the offer first doubles a blocked STUN timeout. Use the public
+            # gatherer API without putting the answerer in have-local-offer.
+            try:
+                stream = create()
+                stream.prepare_task = asyncio.create_task(
+                    stream.peer.sctp.transport.transport.iceGatherer.gather()
+                )
+            except (OSError, ValueError):
+                if stream:
+                    await close_stream(stream)
+                    stream = None
             attempt, offer = await receive("offer")
             validate_sdp(offer)
             answer = None
-            if offer is not None:
+            if offer is not None and stream:
                 try:
-                    stream = create()
+                    async with asyncio.timeout(PREPARE_TIMEOUT):
+                        await asyncio.shield(stream.prepare_task)
                     answer = await description(stream, "answer", offer)
                     validate_sdp(answer)
                 except (TimeoutError, OSError, ValueError):

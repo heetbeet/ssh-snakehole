@@ -25,8 +25,10 @@ from ssh_snakehole.transit import dial
 
 
 class StunServer(asyncio.DatagramProtocol):
-    def __init__(self):
+    def __init__(self, hold_until=1):
         self.requests = 0
+        self.hold_until = hold_until
+        self.pending = []
 
     def connection_made(self, transport):
         self.transport = transport
@@ -39,11 +41,17 @@ class StunServer(asyncio.DatagramProtocol):
                 and message.message_method == stun.Method.BINDING
             ):
                 self.requests += 1
-                response = stun.Message(
-                    stun.Method.BINDING, stun.Class.RESPONSE, message.transaction_id
-                )
-                response.attributes["XOR-MAPPED-ADDRESS"] = address
-                self.transport.sendto(bytes(response), address)
+                self.pending.append((message, address))
+                if self.requests >= self.hold_until:
+                    for request, target in self.pending:
+                        response = stun.Message(
+                            stun.Method.BINDING,
+                            stun.Class.RESPONSE,
+                            request.transaction_id,
+                        )
+                        response.attributes["XOR-MAPPED-ADDRESS"] = target
+                        self.transport.sendto(bytes(response), target)
+                    self.pending.clear()
 
 
 class ICE(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +136,57 @@ class ICE(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(received, [right, left])
         finally:
             transport.close()
+
+    async def test_both_peers_gather_before_stun_answers(self):
+        # This STUN server answers only when both peers have queried it. A
+        # sequential offer/answer gather would wait for the first 5s timeout.
+        protocol = StunServer(hold_until=2)
+        transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            lambda: protocol, local_addr=("127.0.0.1", 0)
+        )
+        try:
+            async with asyncio.timeout(2):
+                a, b = await self.pair(
+                    f"stun:127.0.0.1:{transport.get_extra_info('sockname')[1]}"
+                )
+            self.assertEqual((a.route, b.route), ("direct-udp", "direct-udp"))
+            self.assertGreaterEqual(protocol.requests, 2)
+        finally:
+            transport.close()
+
+    async def test_high_latency_output_is_pipelined(self):
+        a, b = await self.pair()
+        original = StunProtocol.send_data
+        packets = []
+
+        async def delayed(protocol, data, address):
+            async def deliver():
+                await asyncio.sleep(0.08)
+                await original(protocol, data, address)
+
+            packets.append(asyncio.create_task(deliver()))
+
+        payload = os.urandom(128 * 1024)
+
+        async def produce():
+            for start in range(0, len(payload), CHUNK):
+                a.write(payload[start : start + CHUNK])
+                await a.drain()
+            a.write_eof()
+
+        with patch.object(StunProtocol, "send_data", delayed):
+            task = asyncio.create_task(produce())
+            try:
+                # Stop-and-wait per 1KiB packet would take over 20s at this RTT.
+                async with asyncio.timeout(8):
+                    self.assertEqual(await b.read(), payload)
+                    await task
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                for packet in packets:
+                    packet.cancel()
+                await asyncio.gather(*packets, return_exceptions=True)
 
     async def test_reliable_stream_survives_loss_reordering_and_duplicates(self):
         original = StunProtocol.send_data
