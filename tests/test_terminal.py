@@ -1,6 +1,8 @@
 """Real SSH PTYs, interactive programs, state, signals and channel lifetime."""
 
 import asyncio
+import base64
+import json
 import os
 import re
 import subprocess
@@ -41,7 +43,17 @@ class Output:
 class LocalTTY:
     """Exercise the installed CLI with an actual local console on either OS."""
 
-    def __init__(self, argv, environment):
+    def __init__(self, argv, environment, *, emulate=True):
+        self.size = [100, 30]
+        self.emulator = (
+            subprocess.Popen(
+                ["node", str(Path(__file__).with_name("terminal_emulator.cjs"))],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
+            if emulate
+            else None
+        )
         if sys.platform == "win32":
             from winpty import PTY, Backend
 
@@ -75,7 +87,11 @@ class LocalTTY:
         else:
             os.write(self.master, data)
 
+    async def key(self, key):
+        await self.send({"left": b"\x1b[D", "end": b"\x1b[F"}[key])
+
     def resize(self, width, height):
+        self.size = [width, height]
         if sys.platform == "win32":
             self.pty.set_size(width, height)
         else:
@@ -102,8 +118,20 @@ class LocalTTY:
                 except OSError:
                     return b""
             if data:
-                if b"\x1b[6n" in data:
-                    await self.send(b"\x1b[1;1R")
+                # Real TUIs query cursor position. A fixed fake reply corrupts
+                # the new Python REPL's cursor calculations and editing.
+                if not self.emulator:
+                    return data
+                self.emulator.stdin.write(
+                    json.dumps(
+                        {"data": base64.b64encode(data).decode(), "resize": self.size}
+                    ).encode()
+                    + b"\n"
+                )
+                self.emulator.stdin.flush()
+                state = json.loads(self.emulator.stdout.readline())
+                if state["replies"]:
+                    await self.send(state["replies"].encode())
                 return data
             if not self.alive():
                 return b""
@@ -120,6 +148,10 @@ class LocalTTY:
         )
 
     def close(self):
+        if self.emulator:
+            self.emulator.stdin.close()
+            self.emulator.wait(timeout=5)
+            self.emulator.stdout.close()
         if sys.platform == "win32":
             # Own only this test process. Never signal PID 0 on Windows.
             import ctypes as c
@@ -259,7 +291,8 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     await asyncio.sleep(1.8)
                     self.assertFalse(host.closed.is_set())
                     await process.send(b"\x03")
-                    self.assertIn(b"KeyboardInterrupt", await out.until(b">>> "))
+                    await out.until(b"KeyboardInterrupt")
+                    await out.until(b">>> ")
                     await process.send(b"exit(7)\r")
                     if sys.platform == "win32":
                         await out.until(b"> ")

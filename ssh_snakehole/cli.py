@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import codecs
 import math
 import os
 import sys
@@ -162,8 +163,31 @@ async def interactive(session):
             await process.close_stdin()
 
         async def copy(reader, stream):
+            decoder = (
+                codecs.getincrementaldecoder("utf-8")()
+                if sys.platform == "win32"
+                else None
+            )
+            pending = ""
             while data := await reader.read(32768):
-                output(data, stream)
+                if decoder:
+                    # ConPTY advertises its private Win32 key-event protocol.
+                    # Keep local ReadConsole input in portable VT mode instead.
+                    text = pending + decoder.decode(data)
+                    text = text.replace("\x1b[?9001h", "").replace("\x1b[?9001l", "")
+                    pending = ""
+                    for count in range(min(7, len(text)), 0, -1):
+                        if "\x1b[?9001".startswith(text[-count:]):
+                            pending, text = text[-count:], text[:-count]
+                            break
+                    # Bypass locale encoding; console writes require UTF-8.
+                    output(text.encode("utf-8"), stream)
+                else:
+                    output(data, stream)
+            if decoder:
+                output(
+                    (pending + decoder.decode(b"", final=True)).encode("utf-8"), stream
+                )
 
         async def resize():
             previous = size

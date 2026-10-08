@@ -111,6 +111,12 @@ exposes byte streams for input and output. `session.terminal()` opens the remote
 shell with a PTY; pass a command to run an interactive program instead. Its process
 supports `send(bytes)`, `stdout.read(32768)`, `resize(columns, rows)` and `wait()`.
 PTY stdout and stderr are combined by the operating system, as with normal SSH.
+Terminal input is UTF-8 on Windows. Use a UTF-8 locale on Unix when connecting
+from Windows. SSH carries bytes rather than negotiating an encoding; the API's
+Unix PTYs and every platform's `exec` streams preserve bytes, including Latin-1.
+Colors and full-screen programs use your terminal's VT support and `TERM` value.
+Use a current terminal, such as Windows Terminal. Fonts still determine which
+Unicode characters can be displayed.
 Captured `run()` output defaults to 8 MiB. Retain `session.ticket` for reconnection;
 `await session.keepalive()` renews inactivity without a shell command.
 
@@ -147,6 +153,7 @@ Development checks:
 
 ```sh
 python -m pip install -e . -r requirements-dev.txt
+npm ci
 python -m ruff check .
 python -m ruff format --check .
 python -m mypy
@@ -155,3 +162,6 @@ python -m build
 python -m unittest discover -s tests -v
 python tools/audit_runtime.py
 ```
+
+Node and Textual are test dependencies only. The terminal tests use xterm's
+parser to check cursor replies, a full-screen editor, Unicode paste and resizing.
