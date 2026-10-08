@@ -190,7 +190,8 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     await process.send(
                         b"print('SIZE'+str(tuple(os.get_terminal_size())))\r"
                     )
-                    self.assertIn(b"SIZE(104, 37)", await out.until(b">>> "))
+                    await out.until(b"SIZE(104, 37)")
+                    await out.until(b">>> ")
                     await process.send(
                         b"print(chr(27)+'[31m'+chr(233)+chr(27)+'[0m')\r"
                     )
@@ -369,7 +370,7 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         )
                     else:
                         wrapper += "import termios; old=termios.tcgetattr(0); "
-                        check = "assert termios.tcgetattr(0)==old; "
+                        check = "assert termios.tcgetattr(0)==old, (old,termios.tcgetattr(0)); "
                     arguments = argv[4:] + (
                         ["connect", credential]
                         if action == "connect"
@@ -415,7 +416,8 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                         await tty.send(
                             b"print('CLI-SIZE'+str(tuple(__import__('os').get_terminal_size())))\r"
                         )
-                        self.assertIn(b"CLI-SIZE(104, 37)", await out.until(b">>> "))
+                        await out.until(b"CLI-SIZE(104, 37)")
+                        await out.until(b">>> ")
                         if remote_close:
                             await host.aclose()
                         else:
