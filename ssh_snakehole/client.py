@@ -149,9 +149,17 @@ class Session:
             or timeout <= 0
         ):
             raise ValueError("Timeout must be a finite positive number or None")
-        remaining = max(0, expiry(self.info.expires_at) - time.time())
+        remaining = (
+            max(0, expiry(self.info.expires_at) - time.time())
+            if self.info.expires_at is not None
+            else None
+        )
         return asyncio.timeout(
-            min(timeout, remaining) if timeout is not None else remaining
+            min(timeout, remaining)
+            if timeout is not None and remaining is not None
+            else timeout
+            if timeout is not None
+            else remaining
         )
 
     @contextlib.asynccontextmanager
@@ -281,7 +289,7 @@ class Session:
         command: str,
         *,
         stdin: bytes = b"",
-        timeout: float | None = 300,
+        timeout: float | None = None,
         max_output: int = 8 * 1024 * 1024,
     ) -> CommandResult:
         return await self._run(command, False, stdin, timeout, max_output)
@@ -291,7 +299,7 @@ class Session:
         argv: Sequence[str],
         *,
         stdin: bytes = b"",
-        timeout: float | None = 300,
+        timeout: float | None = None,
         max_output: int = 8 * 1024 * 1024,
     ) -> CommandResult:
         if isinstance(argv, (str, bytes)):
@@ -321,6 +329,23 @@ class Session:
         overwrite: bool = False,
     ) -> TransferResult:
         return await (await self.files()).get(source, destination, overwrite=overwrite)
+
+    async def keepalive(self) -> None:
+        """Renew host inactivity without executing a shell command."""
+        self.ticket.check_live()
+        try:
+            async with asyncio.timeout(10):
+                async with self._native.create_process(
+                    subsystem="snakehole-keepalive", encoding=None
+                ) as process:
+                    process.stdin.write(self.info.session_id.encode() + b"\n")
+                    process.stdin.write_eof()
+                    reply = await process.stdout.read(64)
+                    await process.wait_closed()
+                    if reply != b"alive\n" or process.exit_status != 0:
+                        raise OutcomeUnknown("Host did not acknowledge keepalive")
+        except (OSError, asyncssh.Error, TimeoutError) as exc:
+            raise OutcomeUnknown("Remote keepalive could not be confirmed") from exc
 
     async def close_host(self) -> CloseReceipt:
         if self.close_receipt:

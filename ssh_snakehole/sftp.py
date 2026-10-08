@@ -53,12 +53,16 @@ def commit(source, destination, overwrite):
 
 
 class SFTPServer(asyncssh.SFTPServer):
-    def __init__(self, channel, cwd):
+    def __init__(self, channel, cwd, activity=None):
         super().__init__(channel)
         self.cwd = cwd
         self.files = set()
+        self.activity = activity
+        self.operations = {}
 
     def map_path(self, path):
+        if self.activity is not None:
+            self.activity.touch()
         path = local_path(os.fsdecode(path))
         return os.fsencode(
             path if os.path.isabs(path) else os.path.join(self.cwd, path)
@@ -104,6 +108,10 @@ class SFTPServer(asyncssh.SFTPServer):
             os.close(fd)
             raise
         self.files.add(file)
+        if self.activity is not None:
+            operation = self.activity.operation()
+            operation.__enter__()
+            self.operations[file] = operation
         return file
 
     async def read(self, file, offset, size):
@@ -125,15 +133,21 @@ class SFTPServer(asyncssh.SFTPServer):
         return await file_call(write)
 
     async def close(self, file):
-        await file_call(file.close)
-        self.files.discard(file)
+        try:
+            await file_call(file.close)
+        finally:
+            self.files.discard(file)
+            operation = self.operations.pop(file, None)
+            if operation is not None:
+                operation.__exit__(None, None, None)
 
     async def fsync(self, file):
         await file_call(os.fsync, file.fileno())
 
     async def exit(self):
-        for file in tuple(self.files):
-            await self.close(file)
+        await asyncio.gather(
+            *(self.close(file) for file in tuple(self.files)), return_exceptions=True
+        )
 
 
 @dataclass(frozen=True)

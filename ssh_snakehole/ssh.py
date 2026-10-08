@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
+import logging
 import socket
 import weakref
 
@@ -121,6 +123,7 @@ class ServerProcess(asyncssh.SSHServerProcess):
             "sftp",
             "snakehole-argv",
             "snakehole-control",
+            "snakehole-keepalive",
         ) and super().subsystem_requested(name)
 
 
@@ -131,6 +134,10 @@ class Server(asyncssh.SSHServer):
     def connection_made(self, connection):
         self.connection = connection
         self.owner.native = connection
+
+    def connection_lost(self, exc):
+        if exc is not None:
+            logging.getLogger(__name__).debug("SSH connection ended: %s", exc)
 
     def begin_auth(self, username):
         return True
@@ -201,8 +208,9 @@ class SSHConnection:
         except asyncio.CancelledError:
             raise
         except Exception:
-            process.stderr.write(b"ssh-snakehole: remote operation failed\n")
-            process.exit(126)
+            with contextlib.suppress(OSError, asyncssh.Error):
+                process.stderr.write(b"ssh-snakehole: remote operation failed\n")
+                process.exit(126)
         finally:
             closing.cancel()
             work.cancel()

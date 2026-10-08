@@ -1,46 +1,31 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open access, share a code, finish, close</title><link rel="stylesheet" href="style.css"></head><body>
-<header><a href="index.html">ssh-snakehole</a><span class="meta"> / 0.2.1 / 7 October 2026</span></header><main><h1>Open access, share a code, finish, close</h1>
-<p>This is a work in progress. Public PyPI releases will wait until the edge cases are resolved and we are happy with the library.</p>
-<p>Use CPython 3.11-3.14 in an ordinary Python environment. For now, install from the public GitHub repository. This requires Git:</p>
-<pre>python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git</pre>
-<p>Alternatively, from a downloaded or cloned checkout:</p>
-<pre>python -m pip install .</pre>
-<p>A venv is optional and managed with Python's standard tools. Installation creates no service or PATH changes. Version 0.2.1 also remains available through the <a href="https://pypi.autoactuary.com/simple/ssh-snakehole/">private Auto Actuary index</a>, which requires an account.</p>
-<table><thead><tr><th>Computer</th><th>Type in PowerShell, Bash or cmd</th><th>Result</th></tr></thead><tbody>
-<tr><td>Assisted</td><td><code>python -m ssh_snakehole open</code></td><td>Prints a number and four words. Read the code to the operator and leave the terminal open.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole connect CODE</code></td><td>Pairs, encrypts a reconnection ticket, verifies SSH and prints its ID.</td></tr>
-
-<tr><td>Operator</td><td><code>python -m ssh_snakehole exec ID "COMMAND"</code></td><td>Runs one command and returns its real exit code.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole put ID local-file remote-file</code></td><td>Uploads atomically. Existing destination fails; --overwrite opts into replacement.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole get ID remote-file local-file</code></td><td>Downloads with the same no-overwrite default.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole close ID</code></td><td>Confirms revocation and transport closure, then deletes the ticket.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole forget ID</code></td><td>Deletes the local ticket only.</td></tr>
-<tr><td>Operator</td><td><code>python -m ssh_snakehole status ID</code></td><td>Decrypts host information and checks expiry; no online availability claim.</td></tr>
-<tr><td>Either</td><td><code>python -m pip uninstall ssh-snakehole</code></td><td>Standard package removal. Tickets remain until close/forget.</td></tr>
-</tbody></table>
-<p>On Unix use python3 if appropriate. In PowerShell/Bash single quotes preserve shell command text; cmd uses double quotes. Commands run through PowerShell on Windows and /bin/sh on Unix. The run_argv() library method bypasses shell parsing.</p>
-<h2>Agent API</h2><pre>import asyncio
-from ssh_snakehole import connect
-
-async def assist(code):
-    async with connect(code) as session:
-        result = await session.run("COMMAND")
-        result.check_returncode()
-        print(result.stdout.decode(errors="replace"))
-        await session.close_host()
-
-asyncio.run(assist(code))</pre>
-<p>The API keeps credentials in memory unless explicitly saved. Retain session.ticket to reconnect within the host lifetime. The CLI asks for a ticket passphrase; agents can use SSH_SNAKEHOLE_PASSPHRASE in their secret environment. The original code is consumed. Lost commands are never replayed.</p>
-<p>session.exec() exposes AsyncSSH byte streams: read(32768) reads a chunk; read() waits for EOF. Captured run() output defaults to 8 MiB. Commands time out after five minutes unless an explicit timeout is supplied.</p>
-<h2>Offline installation</h2><p>Prepare a wheelhouse on matching OS, CPU and Python version:</p><pre>python -m pip install build
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="style.css"><title>ssh-snakehole</title></head><body><header><a href="index.html">ssh-snakehole</a><span class="meta"> / 0.3.0 / 8 October 2026</span></header><main><h1>Open access, finish, close</h1>
+<p>Work in progress, installed from public GitHub or a local checkout. Public PyPI release waits until the edge cases are resolved. CPython 3.11-3.14 and normal pip are required:</p>
+<pre>python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git
+# Or from a downloaded or cloned checkout:
+python -m pip install .</pre>
+<table><thead><tr><th>Computer</th><th>PowerShell, Bash or cmd</th><th>Result</th></tr></thead><tbody>
+<tr><td>Assisted</td><td><code>python -m ssh_snakehole open</code></td><td>Prints one-use CODE; keep the terminal open. No admin rights required.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole connect</code></td><td>Hidden CODE prompt, new secret reconnection token, foreground command prompt.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole resume</code></td><td>Hidden token prompt, then reconnects to the exact session.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole exec "COMMAND"</code></td><td>Hidden token prompt, streamed output and actual exit status. No default command timeout.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole put local-file remote-file</code></td><td>Hidden token prompt, atomic upload. Existing destinations fail unless --overwrite is supplied.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole get remote-file local-file</code></td><td>Hidden token prompt, download with the same overwrite policy.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole keepalive --interval 1200</code></td><td>Enter token once; foreground process renews access every 20 minutes. Stop it when finished.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole close</code></td><td>Hidden token prompt; confirms host-wide revocation, then deletes encrypted local credentials.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole forget</code></td><td>Hidden token prompt; deletes local credentials without revoking remote access.</td></tr>
+<tr><td>Operator</td><td><code>python -m ssh_snakehole status</code></td><td>Hidden token prompt; shows saved host data without an online availability claim.</td></tr>
+<tr><td>Either</td><td><code>python -m pip uninstall ssh-snakehole</code></td><td>Normal package removal. Saved encrypted tickets remain.</td></tr></tbody></table>
+<p>In the foreground prompt, remote commands run independently through PowerShell or /bin/sh, with no persistent shell environment or PTY. close revokes the whole host session; exit, EOF and operator Ctrl+C disconnect only this client. Host Ctrl+C revokes immediately. Multiple controllers may share accepted credentials; closing that session ends all of them. Separate open invocations are independent.</p>
+<h2>Inactivity and long work</h2><p>Access expires after 30 minutes of inactivity. Commands and open regular-file transfers pause the host timer. The full interval starts after the last active operation finishes, including nonzero command exits. Long silent commands have no implicit timeout. --timeout on exec is optional. An optional host --lifetime SECONDS is a hard limit that overrides active work; no hard lifetime is imposed by default.</p>
+<p>Authenticated keepalive renews inactivity; so does a normal completed command such as echo keepalive. Idle transports, cached SFTP channels without open files and automatic SSH keepalives do not. A controller must stop its foreground keepalive process when finished. No service or detached process is installed.</p>
+<h2>Agent input and API</h2><p>Prefer the importable connect(code) context and retain its Session for repeated run/run_argv/exec/put/get calls. API credentials remain in memory unless explicitly saved. session.exec exposes byte streams; read(32768) reads a chunk and read() waits for EOF. session.keepalive renews access without a remote shell command. Captured run output defaults to 8 MiB. Lost commands are never replayed.</p>
+<p>For separate processes, launch connect --code-stdin --detach with CODE supplied through a trusted stdin pipe. It returns only the token on stdout. Follow-up commands use --token-stdin. The token selects the session directly; no extra ID is needed. Do not place secret literals in shell commands, tools, environment assignments or temporary files. The trusted runner must not record input or token output. Default hidden prompts refuse echoing fallbacks.</p>
+<p>The reconnection token has 256 random bits, independent of CODE. Local credentials are authenticated encrypted and owner-protected; neither secret is saved. Another computer needs both token and encrypted ticket. Do not place tokens on the clipboard. File-copying alone cannot unlock them; malware controlling your account can still capture input or permitted process memory.</p>
+<h2>Native SSH</h2><p>export-ssh NEW-DIRECTORY prompts for the token and exports an encrypted OpenSSH private key, pinned known-hosts file, config and route metadata. It refuses existing directories and unsafe config paths. Run the printed ssh command; OpenSSH asks for the same token as its private-key passphrase. Route metadata contains no operator private key. The Python API is simpler for agents. No global SSH settings are changed. PTYs, shell requests, forwarding and legacy SCP remain rejected.</p>
+<h2>Offline installation</h2><p>Prepare on matching OS, CPU and Python:</p><pre>python -m pip install build
 python -m build --wheel
-python -m pip download --only-binary=:all: --dest wheelhouse dist/ssh_snakehole-0.2.1-py3-none-any.whl</pre>
-<p>Copy wheelhouse to the offline computer, then use:</p><pre>python -m pip install --no-index --find-links wheelhouse ssh-snakehole==0.2.1
-python -m ssh_snakehole open</pre><p>Installation is offline; connecting the two computers still needs a reachable relay.</p>
-<h2>User and admin access</h2><p>Default mode refuses an elevated interpreter. Admin mode requires an already elevated terminal, isolated Python and a protected environment including all dependencies: <code>python -I -m ssh_snakehole open --admin</code>. There is no automatic elevation or custom admin installer. Native admin lifecycle validation remains pending.</p>
-<p>The default lifetime is two hours. Ctrl+C or host context exit revokes access. Closing stops ordinary owned commands but does not undo their intentional software/file changes. Deliberately detached processes and newly installed persistent services are outside the cleanup promise.</p>
-<h2>Native SSH and network route</h2><p><code>python -m ssh_snakehole export-ssh ID NEW-DIRECTORY</code> exports an unencrypted key and pinned OpenSSH config to a new private directory. Existing directories are refused. Delete it after use. PTYs, shell sessions, forwarding, agent forwarding and legacy SCP are rejected.</p>
-<p>Default pairing uses outbound TLS WebSockets. Default Transit uses outbound TCP port 4001. An explicit binary WebSocket relay can be supplied where that port is blocked. Both sides authenticate the Transit greeting and establish SSH with pinned keys obtained through PAKE.</p>
-</main>
-<footer><a href="usage.html">Usage</a> | <a href="implementation.html">Evidence and boundaries</a></footer></body></html>
+python -m pip download --only-binary=:all: --dest wheelhouse dist/ssh_snakehole-0.3.0-py3-none-any.whl</pre>
+<p>Copy wheelhouse to the offline computer:</p><pre>python -m pip install --no-index --find-links wheelhouse ssh-snakehole==0.3.0</pre><p>Installation is offline; pairing and SSH still require a reachable relay.</p>
+<h2>Admin and cleanup</h2><p>Default mode refuses elevation. Admin mode requires an already elevated terminal, isolated Python and a protected installation including all dependencies: python -I -m ssh_snakehole open --admin. There is no automatic elevation or custom installer. Protected admin lifecycle validation remains pending.</p>
+<p>Close stops ordinary owned commands, but intentional file/software changes remain. Deliberately detached processes and newly installed services are outside cleanup. Encrypted tickets can remain after remote inactivity expiry; forget removes them. Invitations expire after ten minutes and first SSH authentication must follow pairing within two minutes.</p>
+<p>Default pairing uses outbound TLS WebSockets and Transit uses outbound TCP 4001. An explicit binary WebSocket relay can be supplied where that port is blocked. Both sides establish SSH using the pinned identities obtained through SPAKE2.</p></main><footer><a href="usage.html">Usage</a> | <a href="implementation.html">Evidence and boundaries</a></footer></body></html>

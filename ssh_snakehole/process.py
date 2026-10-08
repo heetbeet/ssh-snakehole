@@ -152,11 +152,12 @@ async def serve_command(
         if job:
             job.close()
         elif process and sys.platform != "win32":
+            # The acknowledged pipe watcher owns group termination. After it
+            # exits, the numeric group ID may be retired or reused. Never signal
+            # that group from the parent; kill only our still-running worker.
             with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGTERM)
-            await asyncio.sleep(0.1)
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
+                if process.returncode is None:
+                    process.kill()
         for task in tasks:
             task.cancel()
         if tasks:

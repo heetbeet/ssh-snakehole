@@ -25,7 +25,7 @@ async def main():
     native = None
     try:
         code = await ours.allocate()
-        native = create(APPID, url, reactor, versions={"ssh-snakehole": 1})
+        native = create(APPID, url, reactor, versions={"ssh-snakehole": 2})
         native.set_code(code)
         establish = asyncio.create_task(ours.establish())
         await native.get_verifier().asFuture(loop)

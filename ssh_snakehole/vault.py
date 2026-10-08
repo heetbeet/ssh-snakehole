@@ -1,14 +1,15 @@
-"""Optional encrypted ticket files. Importing the library never creates a vault."""
+"""Encrypted local tickets unlocked by independent random reconnection tokens."""
 
-import asyncio
+import base64
 import hashlib
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
 
 from .aio import open_regular
-from .crypto import seal, unseal
+from .crypto import hkdf, seal, unseal
 from .errors import VaultUnlockFailed
 from .platform import private_file
 from .ticket import Ticket
@@ -27,46 +28,39 @@ def directory():
     return root / "ssh-snakehole" / "tickets"
 
 
-def derive(passphrase, salt):
-    return hashlib.scrypt(
-        passphrase.encode("utf-8"),
-        salt=salt,
-        n=32768,
-        r=8,
-        p=1,
-        dklen=32,
-        maxmem=64 * 1024 * 1024,
-    )
+def secret(token):
+    if not isinstance(token, str) or not re.fullmatch(
+        r"snake1_[A-Za-z0-9_-]{43}", token
+    ):
+        raise ValueError("Invalid reconnection token")
+    raw = base64.b64decode(token[7:] + "=", altchars=b"-_", validate=True)
+    if (
+        len(raw) != 32
+        or base64.urlsafe_b64encode(raw).decode().rstrip("=") != token[7:]
+    ):
+        raise ValueError("Invalid reconnection token")
+    return raw
 
 
-async def save(ticket, passphrase, path=None):
-    if len(passphrase) < 12:
-        raise ValueError("Use a vault passphrase of at least 12 characters")
-    default = path is None
-    path = (
-        Path(path)
-        if path is not None
-        else directory() / (ticket.info.session_id + ".json")
-    )
+def resolve(token, root=None):
+    identifier = hashlib.sha256(
+        b"ssh-snakehole/ticket-index/2\0" + secret(token)
+    ).hexdigest()
+    return (Path(root) if root is not None else directory()) / (identifier + ".json")
+
+
+async def save(ticket: Ticket, *, root=None) -> str:
+    token = "snake1_" + secrets.token_urlsafe(32)
+    path = resolve(token, root)
     created = not path.parent.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Restrict owned/new state, without changing a caller's existing directory ACL.
-    if default or created:
-        if path.parent.is_symlink():
-            raise ValueError("Ticket state directory cannot be a symbolic link")
-        if os.name == "nt":
-            private_file(path.parent)
-        else:
-            path.parent.chmod(0o700)
-    salt = secrets.token_bytes(16)
-    key = await asyncio.to_thread(derive, passphrase, salt)
+    if path.parent.is_symlink():
+        raise ValueError("Ticket state directory cannot be a symbolic link")
+    if root is None or created:
+        private_file(path.parent) if os.name == "nt" else path.parent.chmod(0o700)
+    key = hkdf(secret(token), b"ssh-snakehole/ticket-encryption/2")
     data = json_bytes(
-        {
-            "schema": "ssh-snakehole/vault/1",
-            "scrypt": {"n": 32768, "r": 8, "p": 1},
-            "salt": b64(salt),
-            "box": b64(seal(key, ticket.to_bytes())),
-        }
+        {"schema": "ssh-snakehole/vault/2", "box": b64(seal(key, ticket.to_bytes()))}
     )
     temporary = path.with_name(path.name + "." + secrets.token_hex(8))
     fd: int | None = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -83,35 +77,22 @@ async def save(ticket, passphrase, path=None):
         if fd is not None:
             os.close(fd)
         temporary.unlink(missing_ok=True)
-    return path
+    return token
 
 
-async def load(path, passphrase):
+async def load(token: str, *, root=None) -> Ticket:
     try:
+        path = resolve(token, root)
+        if path.is_symlink():
+            raise ValueError("Symbolic ticket file")
         with open_regular(path) as file:
-            data = file.read(32769)
-        value = parse_json(data, 32768)
+            value = parse_json(file.read(32769), 32768)
         if (
-            set(value) != {"schema", "scrypt", "salt", "box"}
-            or value["schema"] != "ssh-snakehole/vault/1"
-            or value["scrypt"] != {"n": 32768, "r": 8, "p": 1}
-            or any(type(x) is not int for x in value["scrypt"].values())
+            set(value) != {"schema", "box"}
+            or value["schema"] != "ssh-snakehole/vault/2"
         ):
             raise ValueError()
-        salt = unb64(value["salt"], 16)
-        encrypted = unb64(value["box"])
-        key = await asyncio.to_thread(derive, passphrase, salt)
-        return Ticket.from_bytes(unseal(key, encrypted))
+        key = hkdf(secret(token), b"ssh-snakehole/ticket-encryption/2")
+        return Ticket.from_bytes(unseal(key, unb64(value["box"])))
     except Exception as exc:
-        raise VaultUnlockFailed("Ticket could not be unlocked") from exc
-
-
-def resolve(value):
-    candidate = Path(value)
-    if candidate.is_file():
-        return candidate
-    import re
-
-    if not re.fullmatch(r"[0-9a-f]{32}", value):
-        raise ValueError("Expected a ticket ID or a ticket file")
-    return directory() / (value + ".json")
+        raise VaultUnlockFailed("Saved credentials could not be unlocked") from exc

@@ -22,6 +22,7 @@ from .errors import (
     SessionExpired,
     UnsupportedOperation,
 )
+from .idle import Idle
 from .pairing import MAILBOX, Pairing
 from .platform import check_privilege, check_runtime, process_user
 from .process import ServerChannel, parse_argv, serve_command, shell_command
@@ -51,18 +52,20 @@ class Host:
     def __init__(
         self,
         *,
-        lifetime: float = 7200,
+        lifetime: float | None = None,
+        idle_timeout: float = 1800,
         admin: bool = False,
         relay: RelayConfig | None = None,
     ) -> None:
-        if (
+        if lifetime is not None and (
             isinstance(lifetime, bool)
             or not isinstance(lifetime, (int, float))
             or not math.isfinite(lifetime)
-            or not 0 < lifetime <= 7200
+            or lifetime <= 0
         ):
-            raise ValueError("Lifetime must be between 0 and 7200 seconds")
+            raise ValueError("Lifetime must be positive")
         self.lifetime, self.admin, self.relay = lifetime, admin, relay or RelayConfig()
+        self.idle = Idle(idle_timeout)
         self.pairing: Pairing | None = None
         self.tasks: set[asyncio.Task[None]] = set()
         self.connections: set[SSHConnection] = set()
@@ -100,8 +103,12 @@ class Host:
         home = Path.home()
         self.cwd = str(home if home.is_dir() else Path.cwd())
         self.seed = secrets.token_bytes(32)
-        self.expires = time.time() + self.lifetime
-        self.deadline = time.monotonic() + self.lifetime
+        self.expires = (
+            time.time() + self.lifetime if self.lifetime is not None else None
+        )
+        self.deadline = (
+            time.monotonic() + self.lifetime if self.lifetime is not None else math.inf
+        )
         os_name = (
             "windows"
             if os.name == "nt"
@@ -123,7 +130,8 @@ class Host:
             host_name=platform.node()[:128],
             process_user=process_user()[:128],
             privilege=privilege,
-            expires_at=timestamp(self.expires),
+            expires_at=timestamp(self.expires) if self.expires is not None else None,
+            idle_timeout=self.idle.timeout,
         )
         self.info = HostInfo.from_offer(self.offer)
         try:
@@ -131,7 +139,8 @@ class Host:
                 self.pairing = await Pairing.open(self.relay.mailbox)
                 self._code = await self.pairing.allocate()
             self.task(self._pair())
-            self.task(self._expire())
+            if self.lifetime is not None:
+                self.task(self._expire())
             return self
         except BaseException:
             await self.aclose()
@@ -149,7 +158,9 @@ class Host:
         pairing = self.pairing
         assert pairing is not None
         try:
-            async with asyncio.timeout(min(600, self.lifetime)):
+            async with asyncio.timeout(
+                min(600, self.lifetime) if self.lifetime is not None else 600
+            ):
                 await pairing.establish()
                 await pairing.send("0", self.offer)
                 accept = await pairing.receive("0")
@@ -225,7 +236,9 @@ class Host:
                     seed=self.seed,
                     authorized=self.authorized,
                     handler=self._command,
-                    sftp_factory=lambda channel: SFTPServer(channel, self.cwd),
+                    sftp_factory=lambda channel: SFTPServer(
+                        channel, self.cwd, self.idle
+                    ),
                 )
                 self.connections.add(connection)
                 self.task(self._connection(connection))
@@ -239,7 +252,10 @@ class Host:
     async def _connection(self, connection: SSHConnection) -> None:
         try:
             await connection.start()
-            self.first_auth = True
+            self.idle.touch()
+            if not self.first_auth:
+                self.first_auth = True
+                self.task(self._idle_expire())
             await connection.wait_closed()
         except Exception:
             await connection.aclose()
@@ -247,8 +263,26 @@ class Host:
             await connection.aclose()
             self.connections.discard(connection)
 
+    async def _idle_expire(self) -> None:
+        await self.idle.wait_expired()
+        self.error = SessionExpired("Access expired after inactivity")
+        await self.aclose()
+
     async def _command(self, process: asyncssh.SSHServerProcess[bytes]) -> None:
+        with self.idle.operation():
+            await self._operation(process)
+
+    async def _operation(self, process: asyncssh.SSHServerProcess[bytes]) -> None:
         command: str | list[str]
+        if process.subsystem == "snakehole-keepalive":
+            async with asyncio.timeout(10):
+                identifier = await process.stdin.read(64)
+            if identifier != self.info.session_id.encode() + b"\n":
+                process.exit(1)
+            else:
+                process.stdout.write(b"alive\n")
+                process.exit(0)
+            return
         if process.subsystem == "snakehole-control":
             async with asyncio.timeout(10):
                 identifier = await process.stdin.read(64)
@@ -340,6 +374,10 @@ class Host:
 
 
 def open_host(
-    *, lifetime: float = 7200, admin: bool = False, relay: RelayConfig | None = None
+    *,
+    lifetime: float | None = None,
+    idle_timeout: float = 1800,
+    admin: bool = False,
+    relay: RelayConfig | None = None,
 ) -> Host:
-    return Host(lifetime=lifetime, admin=admin, relay=relay)
+    return Host(lifetime=lifetime, idle_timeout=idle_timeout, admin=admin, relay=relay)

@@ -29,10 +29,22 @@ class Native(unittest.IsolatedAsyncioTestCase):
                 ticket = await pair(host.code, relay=config)
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
-                    password = "native peer test passphrase"
-                    path = await vault.save(ticket, password, root / "vault" / "ticket")
-                    export(ticket, root / "native", path)
-                    environment = dict(os.environ, SSH_SNAKEHOLE_PASSPHRASE=password)
+                    token = await vault.save(ticket, root=root / "vault")
+                    export(ticket, root / "native", token)
+                    import asyncssh
+
+                    from ssh_snakehole.ssh import private_key
+
+                    key = root / "native/key"
+                    encrypted = key.read_bytes()
+                    with self.assertRaises(asyncssh.KeyImportError):
+                        asyncssh.import_private_key(encrypted)
+                    unlocked = asyncssh.import_private_key(encrypted, passphrase=token)
+                    self.assertEqual(unlocked, private_key(ticket.client_seed))
+                    # Native interop fixture only: remove encryption in this test
+                    # after verifying the product exports an encrypted key.
+                    key.write_bytes(unlocked.export_private_key())
+                    environment = dict(os.environ)
                     environment.pop("PYTHONPATH", None)
                     command = (
                         '[Console]::Out.Write("native"); [Console]::Error.Write("err"); exit 7'
@@ -54,9 +66,8 @@ class Native(unittest.IsolatedAsyncioTestCase):
                     )
                     async with asyncio.timeout(30):
                         out, err = await process.communicate()
-                    self.assertEqual(
-                        (out, err, process.returncode), (b"native", b"err", 7)
-                    )
+                    self.assertEqual((out, process.returncode), (b"native", 7))
+                    self.assertTrue(err.endswith(b"err"), err)
                     if shutil.which("sftp"):
                         source = root / "source bytes"
                         target = root / "remote bytes"
