@@ -23,6 +23,13 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 environment["LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"] = (
                     directory
                 )
+                if sys.platform == "darwin":
+                    environment["HOME"] = directory
+                state = (
+                    root / "Library/Application Support"
+                    if sys.platform == "darwin"
+                    else root
+                )
                 command = [
                     sys.executable,
                     "-I",
@@ -80,7 +87,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                     .decode("ascii")
                 )
                 self.assertRegex(token, r"^snake1_[A-Za-z0-9_-]{43}$")
-                stored = list((root / "ssh-snakehole" / "tickets").glob("*.json"))
+                stored = list((state / "ssh-snakehole" / "tickets").glob("*.json"))
                 self.assertEqual(len(stored), 1)
                 self.assertNotIn(code.encode(), stored[0].read_bytes())
                 self.assertNotIn(token.encode(), stored[0].read_bytes())
@@ -118,7 +125,7 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(downloaded.read_bytes(), data)
                 await invoke("close", "--token-stdin", secret=token)
                 self.assertEqual(
-                    list((root / "ssh-snakehole" / "tickets").glob("*.json")), []
+                    list((state / "ssh-snakehole" / "tickets").glob("*.json")), []
                 )
                 async with asyncio.timeout(10):
                     self.assertEqual(await host.wait(), 0)

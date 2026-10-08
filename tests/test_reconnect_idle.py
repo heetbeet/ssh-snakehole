@@ -208,6 +208,97 @@ class ReconnectIdle(unittest.IsolatedAsyncioTestCase):
                         await vault.load(token, root=directory)
                 await session.close_host()
 
+    @unittest.skipIf(sys.platform == "win32", "POSIX pseudo-terminal")
+    async def test_real_terminal_hidden_pairing_exit_resume_and_close(self):
+        import os
+        import re
+
+        async with open_host(relay=self.config) as host:
+            code = host.code
+            with tempfile.TemporaryDirectory() as directory:
+                environment = dict(os.environ, XDG_STATE_HOME=directory, HOME=directory)
+                command = [
+                    sys.executable,
+                    "-I",
+                    "-m",
+                    "ssh_snakehole",
+                    "--mailbox",
+                    self.config.mailbox,
+                    "--relay",
+                    self.config.transit,
+                ]
+
+                async def terminal(action, credential, commands):
+                    master, slave = os.openpty()
+                    os.set_blocking(master, False)
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        action,
+                        stdin=slave,
+                        stdout=slave,
+                        stderr=slave,
+                        env=environment,
+                        cwd=directory,
+                        start_new_session=True,
+                    )
+                    os.close(slave)
+                    received = bytearray()
+
+                    async def until(marker):
+                        async with asyncio.timeout(15):
+                            while marker not in received:
+                                try:
+                                    part = os.read(master, 32768)
+                                except BlockingIOError:
+                                    await asyncio.sleep(0.01)
+                                    continue
+                                if not part:
+                                    raise EOFError(
+                                        "Terminal ended before expected prompt"
+                                    )
+                                received.extend(part)
+                        result = bytes(received)
+                        received.clear()
+                        return result
+
+                    try:
+                        await until(
+                            b"Code: "
+                            if action == "connect"
+                            else b"Reconnection token: "
+                        )
+                        os.write(master, credential.encode() + b"\n")
+                        output = await until(b"snakehole> ")
+                        self.assertNotIn(credential.encode(), output)
+                        for command_text in commands:
+                            os.write(master, command_text.encode() + b"\n")
+                            output += await until(b"snakehole> ")
+                        os.write(
+                            master, b"exit\n" if action == "connect" else b"close\n"
+                        )
+                        self.assertEqual(await asyncio.wait_for(process.wait(), 15), 0)
+                        return output
+                    finally:
+                        if process.returncode is None:
+                            process.kill()
+                            await process.wait()
+                        os.close(master)
+
+                output = await terminal("connect", code, [r"printf '\160\164\171\n'"])
+                self.assertIn(b"pty\r\n", output)
+                token = re.search(rb"snake1_[A-Za-z0-9_-]{43}", output).group().decode()
+                self.assertFalse(host.closed.is_set())
+                await terminal("resume", token, [])
+                self.assertTrue(host.closed.is_set())
+                state = (
+                    Path(directory) / "Library/Application Support"
+                    if sys.platform == "darwin"
+                    else Path(directory)
+                )
+                self.assertEqual(
+                    list((state / "ssh-snakehole/tickets").glob("*.json")), []
+                )
+
     async def test_foreground_prompt_exits_on_remote_close_without_input(self):
         async def waiting():
             await asyncio.Event().wait()
