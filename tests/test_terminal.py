@@ -194,7 +194,9 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                     # written by the application must still reach the client.
                     self.assertEqual(data.count(b"\x1b[c"), 1)
                     self.assertIn(b"APP-QUERY:\x1b[c", data)
-                    self.assertTrue(data.startswith(b"\x1b[2J\x1b[H"))
+                    self.assertTrue(
+                        data.startswith(b"\x1b[9999;1H" + b"\r\n" * 24 + b"\x1b[H")
+                    )
                     plain = ANSI.sub(b"", data)
                     self.assertIn(b"BURST-BEGIN", plain)
                     self.assertEqual(plain.count(b"burst-line"), 10000)

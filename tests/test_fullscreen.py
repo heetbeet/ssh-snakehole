@@ -79,11 +79,13 @@ class FullScreen(unittest.IsolatedAsyncioTestCase):
             async with open_host(relay=self.config) as host:
                 async with connect(host.code, relay=self.config) as session:
                     async with session.terminal(
-                        "Write-Host 'REMOTE-CURSOR-OK'; Start-Sleep -Milliseconds 100"
+                        "Write-Host 'REMOTE-CURSOR-OK'; Start-Sleep -Milliseconds 100",
+                        size=(100, 30),
                     ) as process:
                         screen = Screen(emulator, process)
                         local = (
-                            "LOCAL OLD HISTORY\r\n" * 20 + "LOCAL COMMAND\r\n"
+                            "LOCAL OLD HISTORY\r\n" * 20
+                            + "Reconnection token: TEST-TOKEN\r\nLOCAL COMMAND\r\n"
                         ).encode()
                         await screen.update({"data": base64.b64encode(local).decode()})
                         while data := await process.stdout.read(32768):
@@ -93,6 +95,8 @@ class FullScreen(unittest.IsolatedAsyncioTestCase):
                         self.assertIn("REMOTE-CURSOR-OK", screen.state["screen"])
                         self.assertNotIn("LOCAL OLD HISTORY", screen.state["screen"])
                         self.assertNotIn("LOCAL COMMAND", screen.state["screen"])
+                        self.assertIn("LOCAL COMMAND", screen.state["history"])
+                        self.assertIn("TEST-TOKEN", screen.state["history"])
                     await session.close_host()
         finally:
             emulator.stdin.close()

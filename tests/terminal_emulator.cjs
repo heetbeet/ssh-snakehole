@@ -15,7 +15,10 @@ function report() {
     buffer.getLine(buffer.viewportY + y)?.translateToString(true) || '').join('\n');
   const prefix = terminal.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[';
   const keys = {left: prefix + 'D', end: prefix + 'F'};
-  process.stdout.write(JSON.stringify({screen, buffer: buffer.type, replies, keys}) + '\n');
+  const historyLines = Math.min(buffer.baseY, 50);
+  const history = Array.from({length: historyLines}, (_, y) =>
+    buffer.getLine(buffer.baseY - historyLines + y)?.translateToString(true) || '').join('\n');
+  process.stdout.write(JSON.stringify({screen, history, buffer: buffer.type, replies, keys}) + '\n');
   replies = '';
 }
 readline.createInterface({input: process.stdin}).on('line', line => {

@@ -32,8 +32,9 @@ This opens the remote account's shell: PowerShell on Windows, the user's shell o
 Unix. Its prompt, working directory, variables, interactive Python, colors and
 terminal resizing work through a real SSH PTY. Ctrl+C reaches the remote program.
 Type `exit` to disconnect. Host Ctrl+C revokes access immediately.
-Windows sessions start with a cleared viewport because ConPTY uses absolute cursor
-positions. This prevents the remote prompt from overwriting earlier local content.
+Windows sessions start on a fresh viewport because ConPTY uses absolute cursor
+positions. Earlier local content, including the reconnection token, moves into
+scrollback so the remote prompt cannot overwrite it.
 
 Before opening the shell, `connect` prints a reconnection token. Keep it if you want
 to reconnect later. The invitation CODE is consumed; the new token unlocks encrypted

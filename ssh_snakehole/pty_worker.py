@@ -25,9 +25,9 @@ def serve(request, descriptor):
         pty = PTY(cols, rows, backend=Backend.ConPTY)
         if not pty.spawn(command[0], " " + subprocess.list2cmdline(command[1:])):
             raise OSError("ConPTY could not start the shell")
-        # ConPTY starts a new screen at (0, 0). Clear its viewport first so its
-        # absolute cursor movements cannot overwrite the client's old prompt.
-        os.write(1, b"\x1b[2J\x1b[H")
+        # ConPTY starts at (0, 0). Move the client's existing viewport into
+        # scrollback first, preserving its prompt and printed reconnection token.
+        os.write(1, b"\x1b[9999;1H" + b"\r\n" * rows + b"\x1b[H")
     else:
         import termios
 
