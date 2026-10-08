@@ -55,11 +55,15 @@ class InputBoundaries(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(os.name == "posix", "POSIX FIFO boundary")
     def test_vault_rejects_a_fifo_without_blocking(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "fifo"
+            from ssh_snakehole import vault
+
+            token = "snake1_" + secrets.token_urlsafe(32)
+            path = vault.resolve(token, directory)
             os.mkfifo(path)
-            code = "import asyncio,sys;from ssh_snakehole import vault;asyncio.run(vault.load(sys.argv[1],'passphrase'))"
+            code = "import asyncio,sys;from ssh_snakehole import vault;asyncio.run(vault.load(sys.stdin.readline().strip(),root=sys.argv[1]))"
             result = subprocess.run(
-                [sys.executable, "-I", "-c", code, str(path)],
+                [sys.executable, "-I", "-c", code, directory],
+                input=(token + "\n").encode(),
                 capture_output=True,
                 timeout=3,
             )
@@ -400,7 +404,9 @@ class SessionBoundaries(unittest.IsolatedAsyncioTestCase):
                     root = Path(directory)
                     (root / "config").write_bytes(b"existing config")
                     with self.assertRaises(FileExistsError):
-                        export(session.ticket, root, root / "ticket")
+                        export(
+                            session.ticket, root, "snake1_" + secrets.token_urlsafe(32)
+                        )
                     self.assertEqual({p.name for p in root.iterdir()}, {"config"})
                     self.assertEqual((root / "config").read_bytes(), b"existing config")
                 await session.close_host()

@@ -10,16 +10,20 @@ from pathlib import Path
 from .aio import close_stream
 from .platform import private_file
 from .ssh import private_key
+from .ticket import validate_offer
 from .transit import dial
-from .wire import unb64
+from .wire import json_bytes, parse_json, unb64
 
 
-def export(ticket, directory, ticket_path):
-    """Export is explicit: it writes an unencrypted native key to protected files."""
+def export(ticket, directory, token):
+    """Export is explicit; the native private key stays encrypted with the token."""
     ticket.check_live()
     root = Path(directory).resolve()
-    ticket_path = Path(ticket_path).resolve()
-    for value in (str(root), str(ticket_path), sys.executable):
+    from .vault import secret
+
+    secret(token)
+    route_path = root / "route.json"
+    for value in (str(root), str(route_path), sys.executable):
         if any(ord(c) < 32 or c in '%!"${}' for c in value):
             raise ValueError(
                 "Path cannot be represented safely in an OpenSSH configuration"
@@ -31,7 +35,7 @@ def export(ticket, directory, ticket_path):
         if sys.platform == "win32"
         else lambda value: shlex.quote(str(value))
     )
-    proxy = f"{quote(sys.executable)} -m ssh_snakehole proxy {quote(ticket_path)}"
+    proxy = f"{quote(sys.executable)} -m ssh_snakehole proxy {quote(route_path)}"
     text = f'Host {identifier}\n    HostName {identifier}\n    User help\n    IdentityFile "{(root / "key").as_posix()}"\n    UserKnownHostsFile "{(root / "known_hosts").as_posix()}"\n    StrictHostKeyChecking yes\n    IdentitiesOnly yes\n    ProxyCommand {proxy}\n    RequestTTY no\n'
     root.mkdir(parents=True, exist_ok=False, mode=0o700)
     created = []
@@ -41,8 +45,11 @@ def export(ticket, directory, ticket_path):
         for name, data in (
             (
                 "key",
-                private_key(ticket.client_seed).export_private_key().decode("ascii"),
+                private_key(ticket.client_seed)
+                .export_private_key(passphrase=token)
+                .decode("ascii"),
             ),
+            ("route.json", json_bytes(ticket.offer).decode("ascii")),
             ("known_hosts", identifier + " " + ticket.offer["host_key"] + "\n"),
             ("config", text),
         ):
@@ -66,8 +73,16 @@ def export(ticket, directory, ticket_path):
     return f'ssh -F "{path}" {identifier} "COMMAND"; delete {root} after use'
 
 
-async def proxy(ticket):
-    ticket.check_live()
+async def proxy(route):
+    import time
+
+    from .aio import open_regular
+    from .ticket import expiry
+
+    with open_regular(route) as file:
+        offer = validate_offer(parse_json(file.read(8193)))
+    if offer["expires_at"] is not None and time.time() >= expiry(offer["expires_at"]):
+        raise ValueError("Native route expired")
     if sys.platform == "win32":
         import msvcrt
 
@@ -75,9 +90,9 @@ async def proxy(ticket):
         msvcrt.setmode(1, os.O_BINARY)
     async with asyncio.timeout(40):
         reader, writer = await dial(
-            unb64(ticket.offer["transit_key"], 32),
-            ticket.offer["operator_side"],
-            relay=ticket.offer["relay"],
+            unb64(offer["transit_key"], 32),
+            offer["operator_side"],
+            relay=offer["relay"],
         )
 
     async def upstream():
@@ -144,7 +159,9 @@ async def proxy(ticket):
             from .ticket import expiry
 
             async with asyncio.timeout(
-                max(0, expiry(ticket.info.expires_at) - time.time())
+                max(0, expiry(offer["expires_at"]) - time.time())
+                if offer["expires_at"] is not None
+                else None
             ):
                 await tasks[1]
     finally:

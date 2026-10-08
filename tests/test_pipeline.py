@@ -67,16 +67,14 @@ class Pipeline(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(
                         (await files.stat(str(d / "remote")))["size"], len(data)
                     )
-                    path = await vault.save(
-                        ticket, "a sufficiently long test passphrase", d / "ticket"
-                    )
+                    token = await vault.save(ticket, root=d)
+                    path = vault.resolve(token, d)
                     self.assertNotIn(ticket.client_seed, path.read_bytes())
-                    restored = await vault.load(
-                        path, "a sufficiently long test passphrase"
-                    )
+                    self.assertNotIn(token.encode(), path.read_bytes())
+                    restored = await vault.load(token, root=d)
                     self.assertEqual(restored.to_bytes(), ticket.to_bytes())
                     with self.assertRaises(VaultUnlockFailed):
-                        await vault.load(path, "wrong passphrase")
+                        await vault.load("snake1_" + "A" * 43, root=d)
             async with connect(ticket, relay=config) as second:
                 self.assertEqual(
                     (

@@ -23,9 +23,6 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 environment["LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"] = (
                     directory
                 )
-                environment["SSH_SNAKEHOLE_PASSPHRASE"] = (
-                    "a CLI workflow test passphrase"
-                )
                 command = [
                     sys.executable,
                     "-I",
@@ -37,19 +34,21 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                     f"tcp://127.0.0.1:{relay.transit_port}",
                 ]
 
-                async def invoke(*args, expected_status=0):
+                async def invoke(*args, secret, expected_status=0):
                     process = await asyncio.create_subprocess_exec(
                         *command,
                         *args,
                         cwd=directory,
                         env=environment,
-                        stdin=asyncio.subprocess.DEVNULL,
+                        stdin=asyncio.subprocess.PIPE,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
                     try:
                         async with asyncio.timeout(40):
-                            stdout, stderr = await process.communicate()
+                            stdout, stderr = await process.communicate(
+                                (secret + "\n").encode()
+                            )
                         self.assertEqual(
                             process.returncode,
                             expected_status,
@@ -75,13 +74,25 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 assert host.stdout is not None
                 async with asyncio.timeout(10):
                     code = (await host.stdout.readline()).strip().decode("ascii")
-                identifier = (await invoke("connect", code)).strip().decode("ascii")
-                self.assertRegex(identifier, r"^[0-9a-f]{32}$")
+                token = (
+                    (await invoke("connect", "--code-stdin", "--detach", secret=code))
+                    .strip()
+                    .decode("ascii")
+                )
+                self.assertRegex(token, r"^snake1_[A-Za-z0-9_-]{43}$")
+                stored = list((root / "ssh-snakehole" / "tickets").glob("*.json"))
+                self.assertEqual(len(stored), 1)
+                self.assertNotIn(code.encode(), stored[0].read_bytes())
+                self.assertNotIn(token.encode(), stored[0].read_bytes())
+                await invoke("keepalive", "--token-stdin", secret=token)
                 shell = (
                     "Write-Output cli-ok" if os.name == "nt" else "printf 'cli-ok\\n'"
                 )
                 self.assertEqual(
-                    (await invoke("exec", identifier, shell)).strip(), b"cli-ok"
+                    (
+                        await invoke("exec", "--token-stdin", shell, secret=token)
+                    ).strip(),
+                    b"cli-ok",
                 )
                 source, target, downloaded = (
                     root / "source",
@@ -90,13 +101,22 @@ class CLI(unittest.IsolatedAsyncioTestCase):
                 )
                 data = bytes(range(256)) * 200
                 source.write_bytes(data)
-                await invoke("put", identifier, str(source), str(target))
                 await invoke(
-                    "put", identifier, str(source), str(target), expected_status=1
+                    "put", "--token-stdin", str(source), str(target), secret=token
                 )
-                await invoke("get", identifier, str(target), str(downloaded))
+                await invoke(
+                    "put",
+                    "--token-stdin",
+                    str(source),
+                    str(target),
+                    secret=token,
+                    expected_status=1,
+                )
+                await invoke(
+                    "get", "--token-stdin", str(target), str(downloaded), secret=token
+                )
                 self.assertEqual(downloaded.read_bytes(), data)
-                await invoke("close", identifier)
+                await invoke("close", "--token-stdin", secret=token)
                 self.assertEqual(
                     list((root / "ssh-snakehole" / "tickets").glob("*.json")), []
                 )

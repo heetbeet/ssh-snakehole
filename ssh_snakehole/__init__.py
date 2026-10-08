@@ -13,7 +13,7 @@ from .host import CloseReason, Host, RelayConfig, open_host
 from .sftp import TransferResult
 from .ticket import HostInfo, Ticket
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 __all__ = [
     "open_host",
     "connect",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import socket
 import weakref
 
@@ -121,6 +122,7 @@ class ServerProcess(asyncssh.SSHServerProcess):
             "sftp",
             "snakehole-argv",
             "snakehole-control",
+            "snakehole-keepalive",
         ) and super().subsystem_requested(name)
 
 
@@ -131,6 +133,10 @@ class Server(asyncssh.SSHServer):
     def connection_made(self, connection):
         self.connection = connection
         self.owner.native = connection
+
+    def connection_lost(self, exc):
+        if exc is not None:
+            logging.getLogger(__name__).debug("SSH connection ended: %s", exc)
 
     def begin_auth(self, username):
         return True

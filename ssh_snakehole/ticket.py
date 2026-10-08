@@ -14,23 +14,25 @@ from .ssh import key_public
 from .transit import endpoint
 from .wire import b64, json_bytes, parse_json, unb64
 
-SCHEMA = "ssh-snakehole/1"
+SCHEMA = "ssh-snakehole/2"
 
 
 def timestamp(value: float) -> str:
-    return datetime.datetime.fromtimestamp(value, datetime.UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
+    return (
+        datetime.datetime.fromtimestamp(value, datetime.UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
     )
 
 
 def expiry(value: str) -> float:
     try:
         if not isinstance(value, str) or not re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{6})?Z", value
         ):
             raise ValueError()
         return (
-            datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+            datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
             .replace(tzinfo=datetime.UTC)
             .timestamp()
         )
@@ -64,6 +66,7 @@ def validate_offer(offer: dict[str, Any]) -> dict[str, Any]:
             "process_user",
             "privilege",
             "expires_at",
+            "idle_timeout",
         ),
         kind="offer",
         role="host",
@@ -93,7 +96,15 @@ def validate_offer(offer: dict[str, Any]) -> dict[str, Any]:
             or any(ord(c) < 32 for c in offer[key])
         ):
             raise ProtocolViolation("Invalid host label")
-    expiry(offer["expires_at"])
+    if offer["expires_at"] is not None:
+        expiry(offer["expires_at"])
+    idle = offer["idle_timeout"]
+    if (
+        isinstance(idle, bool)
+        or not isinstance(idle, (int, float))
+        or not 0 < idle <= 1800
+    ):
+        raise ProtocolViolation("Invalid inactivity timeout")
     return offer
 
 
@@ -104,7 +115,8 @@ class HostInfo:
     process_user: str
     host_os: str
     privilege: str
-    expires_at: str
+    expires_at: str | None
+    idle_timeout: float
 
     @classmethod
     def from_offer(cls, offer: dict[str, Any]) -> HostInfo:
@@ -139,7 +151,9 @@ class Ticket:
     def check_live(self) -> None:
         import time
 
-        if time.time() >= expiry(self.offer["expires_at"]):
+        if self.offer["expires_at"] is not None and time.time() >= expiry(
+            self.offer["expires_at"]
+        ):
             raise SessionExpired("Host lifetime has expired")
 
     def to_bytes(self) -> bytes:
