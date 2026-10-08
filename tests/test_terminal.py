@@ -530,6 +530,8 @@ class Terminal(unittest.IsolatedAsyncioTestCase):
                             await tty.send(b"exit()\r")
                             if sys.platform == "win32":
                                 await out.until(b"> ")
+                            else:
+                                await out.until(b"$ ")
                             await tty.send(b"exit\r")
                         await out.until(b"RESTORED")
                         self.assertEqual(await tty.wait(), 1 if remote_close else 0)
