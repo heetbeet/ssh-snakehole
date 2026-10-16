@@ -35,6 +35,3 @@ Active commands and terminals pause the 30-minute inactivity timer. For long gap
 between commands, own a foreground
 `python -m ssh_snakehole keepalive --token TOKEN --interval 1200` process and stop
 it when finished. No keepalive is needed while a long command is still running.
-
-If using the Python API instead of the CLI, retain a single `Session` from
-`connect(CODE)` in memory and reuse it. This API path needs no CLI token.
