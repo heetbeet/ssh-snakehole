@@ -237,6 +237,13 @@ async def run(args):
                 f"Access as {host.info.process_user} ({host.info.privilege}); Ctrl+C revokes access. Access expires after 30 minutes of inactivity.",
                 file=sys.stderr,
             )
+            print(
+                f"Agents: run python -m ssh_snakehole pair {host.code} once. "
+                'Keep the returned snake1_... token; use exec --token TOKEN "COMMAND" '
+                "for subsequent commands on the same operator computer.",
+                file=sys.stderr,
+                flush=True,
+            )
             await host.wait_closed()
             if host.error:
                 raise host.error

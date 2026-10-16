@@ -86,6 +86,11 @@ class CLI(unittest.IsolatedAsyncioTestCase):
             assert host.stdout is not None
             async with asyncio.timeout(10):
                 code = (await host.stdout.readline()).strip().decode("ascii")
+                assert host.stderr is not None
+                self.assertIn(b"Ctrl+C revokes access", await host.stderr.readline())
+                agent_hint = await host.stderr.readline()
+            self.assertIn(f"pair {code} once".encode(), agent_hint)
+            self.assertIn(b'exec --token TOKEN "COMMAND"', agent_hint)
             token = (
                 (await invoke("pair", "--code-stdin", secret=code))
                 .strip()
