@@ -24,6 +24,11 @@ def parser():
     p = Parser(
         prog="python -m ssh_snakehole",
         description="Temporary SSH through outbound relays. CPython 3.11-3.14.",
+        epilog=(
+            "Agents: pair CODE once, keep the returned snake1_... token, "
+            'then exec --token TOKEN "COMMAND". '
+            "connect and resume open interactive terminals."
+        ),
     )
     p.add_argument("--mailbox", help="Explicit mailbox WebSocket URL")
     p.add_argument("--relay", help="Explicit Transit relay URL")
@@ -39,8 +44,11 @@ def parser():
         help="Optional hard lifetime in seconds, including active work",
     )
     for action, help_text in (
-        ("connect", "Pair using CODE and open the remote shell"),
-        ("pair", "Exchange CODE for a reconnection token; print only the token"),
+        ("connect", "For people: pair using CODE and open an interactive remote shell"),
+        (
+            "pair",
+            "For agents: exchange CODE for a token; retain it for exec and transfers",
+        ),
     ):
         join = sub.add_parser(action, help=help_text)
         join.add_argument(
