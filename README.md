@@ -8,6 +8,29 @@ This is a work in progress. Install from GitHub or a checkout; public PyPI relea
 will wait until the remaining edge cases are resolved. Requires CPython 3.11-3.14;
 interactive Windows hosts use ConPTY on Windows 10 1809 or later.
 
+## Windows quick start, bazooka mode
+
+On the computer being assisted, paste this into a normal, non-administrator
+PowerShell window. No Python or Git installation is needed beforehand:
+
+```powershell
+powershell -NoProfile -ep Bypass -c "irm https://raw.githubusercontent.com/heetbeet/ssh-snakehole/master/open.ps1 | iex"
+```
+
+This runs [open.ps1](open.ps1), installs uv if missing, provisions compatible Python,
+and downloads the latest Snakehole from GitHub. Read back the one-use invitation
+code and leave the window open. Ctrl+C revokes access.
+
+**Giving the code to an agent?** Tell it to follow [the agent instructions](AGENTS.md):
+run `pair CODE` once, keep the returned `snake1_...` token, then use `exec` with
+that token. `connect` opens an interactive terminal for a person.
+
+It leaves uv in the temporary directory and Python/packages in uv's user cache
+and data directories. It adds no services, startup tasks or PATH entries.
+Rerunning the command reuses downloads and checks GitHub for updates.
+
+## Python installation
+
 ```sh
 python -m pip install git+https://github.com/heetbeet/ssh-snakehole.git
 # Or from a downloaded or cloned checkout:
@@ -42,7 +65,9 @@ credentials saved on the operator's computer. Neither CODE nor token is stored a
 
 ## Agent commands
 
-Exchange CODE without opening a terminal, then use the returned token:
+Start with `pair`, not `connect` or `resume`. Pairing consumes the invitation and
+prints a new secret starting with `snake1_`. Retain that exact token in the agent's
+private session context or runner secret store before doing anything else:
 
 ```sh
 python -m ssh_snakehole pair CODE
@@ -53,6 +78,18 @@ python -m ssh_snakehole put --token TOKEN local-file remote-file
 python -m ssh_snakehole get --token TOKEN remote-file local-file
 python -m ssh_snakehole close --token TOKEN
 ```
+
+`TOKEN` above means the returned `snake1_...` secret, never the invitation CODE.
+Pair only once. Run the first `exec` within two minutes of pairing. All follow-up
+commands must run on the same operator computer, under the same account, because
+pairing also saves an encrypted ticket there.
+
+A shell variable survives only in that shell. If each tool call starts a new
+process, retain the token in the agent's private context or inject it from the
+runner's secret store on each call. Do not write it into the repository or a
+plaintext temporary file. With a trusted runner, prefer `--token-stdin` to putting
+the token in command arguments. The encrypted ticket cannot recover a lost token;
+ask the host for a fresh invitation if it is lost.
 
 `exec` streams stdout, stderr and piped stdin, and returns the remote shell's exit
 status. Each `exec` starts a separate shell; use `resume` or the Python API's
